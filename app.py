@@ -8,20 +8,19 @@ from datetime import datetime
 import re
 
 # --- [설정] ---
-DOC_NAME = "배구픽업관리"
+DOC_NAME = "배구픽업관리"  # 구글 시트 파일 이름과 100% 일치해야 함
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
 SHEET_HISTORY = "경기기록"
 SHEET_BLACKLIST = "블랙리스트"
 SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
-ADMIN_PASSWORD = "1992"  # [수정] 비밀번호 변경
+ADMIN_PASSWORD = "1992"
 
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
-# [수정] 레벨 선택지 (드롭다운에 표시될 내용)
 LEVELS = [
     "입문 (Beginner) - 기본기 부족, 경기 어려움",
     "초급 (Recreational) - 게임 경험 적음, 참여 가능",
@@ -35,12 +34,10 @@ POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "�
 def get_sheet_instance(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # 배포 시 Secrets 사용 / 로컬에서는 예외처리
         if "gcp_service_account" in st.secrets:
             key_dict = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         else:
-            # 로컬 테스트용
             creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
             
         client = gspread.authorize(creds)
@@ -48,6 +45,7 @@ def get_sheet_instance(sheet_name):
         try:
             return doc.worksheet(sheet_name)
         except:
+            # 시트가 없으면 생성
             return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
     except Exception as e:
         return None
@@ -93,12 +91,17 @@ def archive_current_game():
     game_info = get_current_game_info()
     if src_sheet and dst_sheet and game_info:
         data = src_sheet.get_all_records()
+        
+        # 헤더가 없는 경우 대비 (KeyError 방지)
+        if not dst_sheet.get_all_values():
+            dst_sheet.append_row(['일시', '게임제목', '이름', '연락처', '1순위', '레벨'])
+
         if data:
             rows = []
             game_date = game_info.get('일시', datetime.now().strftime("%Y-%m-%d"))
             game_title = game_info.get('제목', 'Untitled')
             for p in data:
-                rows.append([game_date, game_title, p['이름'], p['연락처'], p['1순위'], p['레벨']])
+                rows.append([game_date, game_title, p.get('이름',''), p.get('연락처',''), p.get('1순위',''), p.get('레벨','')])
             for r in rows: dst_sheet.append_row(r)
 
 def load_applicants():
@@ -180,7 +183,10 @@ def get_my_history(name, phone):
     if sheet:
         clean_phone = normalize_phone(phone)
         for row in sheet.get_all_records():
-            if row['이름'] == name and normalize_phone(row['연락처']) == clean_phone:
+            # KeyError 방지를 위한 .get() 사용
+            row_name = row.get('이름', '')
+            row_phone = row.get('연락처', '')
+            if row_name == name and normalize_phone(row_phone) == clean_phone:
                 history.append(row)
     return history
 
@@ -334,11 +340,19 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🛠️ 게임 개설 알림 메시지 수정
+    - 🛠️ API 연결 안정성 강화
+    - 📝 경기기록 조회 오류(KeyError) 수정
     - 🔒 관리자 보안 업데이트
-    - 📘 전 메뉴 이용 가이드 추가
     """)
     st.caption("문의: 운영진")
+    
+    # [연결 상태 진단]
+    st.divider()
+    if get_sheet_instance(SHEET_APPLICANTS):
+        st.success("✅ 구글 시트 연결됨")
+    else:
+        st.error("❌ 구글 시트 연결 실패")
+        st.caption("1. 파일명 '배구픽업관리' 확인\n2. '배구픽업관리' 시트에 봇 이메일 공유 확인")
 
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
@@ -379,7 +393,6 @@ with tab1:
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
                 
-                # [수정] 레벨 설명 가이드 추가
                 with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                     st.markdown("""
                     - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
@@ -445,7 +458,6 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    # [수정] 가이드 추가
     with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
         st.markdown("""
         - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
@@ -492,7 +504,6 @@ with tab2:
 
 # --- 탭 3: My Page ---
 with tab3:
-    # [수정] 가이드 추가
     with st.expander("📘 이용 가이드: 내 정보 확인", expanded=False):
         st.write("본인의 이름과 연락처를 입력하면 '입금 확인 여부'와 '과거 경기 기록'을 조회할 수 있습니다.")
 
@@ -513,16 +524,25 @@ with tab3:
                     st.dataframe(pd.DataFrame(my_cur)[['이름', '1순위', '레벨']], hide_index=True)
                 else: st.warning("현재 신청 내역 없음")
                 st.divider()
+                
+                # [수정] KeyError 방지: 데이터가 있는지, 컬럼이 맞는지 확인 후 표시
                 hist = get_my_history(my_name, my_phone)
                 st.subheader("📜 과거 기록")
                 if hist:
+                    df_hist = pd.DataFrame(hist)
+                    # 필요한 컬럼이 다 있는지 확인
+                    req_cols = ['일시', '게임제목', '1순위', '레벨']
+                    if set(req_cols).issubset(df_hist.columns):
+                        st.dataframe(df_hist[req_cols], hide_index=True)
+                    else:
+                        # 컬럼이 하나라도 없으면 그냥 전체 다 보여줌 (에러 방지)
+                        st.dataframe(df_hist, hide_index=True)
                     st.success(f"총 {len(hist)}회 참가")
-                    st.dataframe(pd.DataFrame(hist)[['일시', '게임제목', '1순위', '레벨']], hide_index=True)
-                else: st.info("기록 없음")
+                else: 
+                    st.info("기록 없음")
 
 # --- 탭 4: MVP ---
 with tab4:
-    # [수정] 가이드 추가
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
         st.write("오늘 경기에서 가장 멋진 활약을 펼친 선수에게 투표해주세요! (1인 1표, 중복 투표 불가)")
 
