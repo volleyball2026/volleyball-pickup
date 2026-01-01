@@ -8,7 +8,7 @@ from datetime import datetime
 import re
 
 # --- [설정] ---
-# KEY_FILE_PATH 변수는 배포 버전에서 삭제합니다.
+# KEY_FILE_PATH 삭제 (이제 필요 없습니다)
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
@@ -22,30 +22,20 @@ ADMIN_PASSWORD = "1234"
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
-LEVELS = [
-    "입문 (Beginner) - 기본기가 부족하여 실제 경기 참여는 어려움",
-    "초급 (Recreational) - 게임 경험은 적지만 참여 가능",
-    "중급 (Intermediate) - 전국대회에 무리 없이 참여할 수 있는 수준",
-    "상급 (Advanced) - 전국대회 상위 무대에서도 원활히 활동 가능",
-    "최상급 / 엘리트 (Semi-pro / Elite) - 전국대회 최상위권에서 활약 가능하며, 선출(선수 출신)에 준하는 실력"
-]
-POSITION_QUOTAS = {
-    "세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1,
-    "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1
-}
+LEVELS = ["입문 (Beginner)", "초급 (Recreational)", "중급 (Intermediate)", "상급 (Advanced)", "최상급 (Elite)"]
+POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 
-# --- [구글 시트 연결 (배포용 수정 완료)] ---
+# --- [구글 시트 연결 (수정됨)] ---
 def get_sheet_instance(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # [수정됨] 로컬 경로 대신 st.secrets 사용
+        # 1. 서버(Streamlit Cloud)에 배포되었을 때
         if "gcp_service_account" in st.secrets:
             key_dict = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+        # 2. 내 컴퓨터에서 실행할 때 (혹시 몰라 남겨둠)
         else:
-            # 혹시나 로컬에서 돌릴 경우를 대비한 예외 처리 (필요시 경로 수정)
-            # 배포 환경에서는 위 if문이 실행됩니다.
-            return None
+            creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
             
         client = gspread.authorize(creds)
         doc = client.open(DOC_NAME)
@@ -54,8 +44,6 @@ def get_sheet_instance(sheet_name):
         except:
             return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
     except Exception as e:
-        # 에러 발생 시 화면에 표시하여 원인 파악 (배포 후 삭제 가능)
-        st.error(f"시트 연결 오류: {e}")
         return None
 
 # --- [유틸리티] ---
@@ -76,7 +64,7 @@ def simplify_level_name(level_full):
     if not isinstance(level_full, str): return str(level_full)
     return level_full.split(" ")[0]
 
-# --- [기능 1: 게임 정보] ---
+# --- [기능 함수] ---
 def save_game_info(info_dict):
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
@@ -85,8 +73,6 @@ def save_game_info(info_dict):
             info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
             info_dict['설명'], info_dict['연락처'], info_dict['마감일시']
         ])
-    else:
-        st.error("게임 정보를 저장할 시트를 찾을 수 없습니다.")
 
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
@@ -109,7 +95,6 @@ def archive_current_game():
                 rows.append([game_date, game_title, p['이름'], p['연락처'], p['1순위'], p['레벨']])
             for r in rows: dst_sheet.append_row(r)
 
-# --- [기능 2: 참가자 관리] ---
 def load_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet: return sheet.get_all_records()
@@ -170,7 +155,6 @@ def clear_applicants():
         ]
         sheet.append_row(headers)
 
-# --- [기타 기능들] ---
 def check_blacklist(name, phone):
     sheet = get_sheet_instance(SHEET_BLACKLIST)
     if sheet:
@@ -284,7 +268,6 @@ def assign_positions_in_team(team_members, history, wait_history):
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # 1순위 -> 2순위 -> 3순위 -> 대기
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
@@ -345,7 +328,7 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🛠️ 에러 수정 (입금 체크박스 등)
+    - 🛠️ 배포용 코드 최적화 (Secrets 적용)
     - 📤 카카오톡 공유 텍스트 (접기/펼치기)
     - 🎨 탭 순서 변경 (참가자 우선)
     """)
@@ -354,13 +337,19 @@ with st.sidebar:
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-# 탭 순서: 참가신청 -> 라인업공개 -> 마이페이지 -> MVP -> 소리함 -> 라인업생성 -> 관리자
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
+    with st.expander("📘 이용 가이드: 어떻게 신청하나요?", expanded=False):
+        st.markdown("""
+        1. **게임 정보 확인**: 상단에 표시된 일시, 장소, 참가비를 확인하세요.
+        2. **신청서 작성**: 이름, 연락처, 레벨, 희망 포지션을 입력하세요.
+        3. **신청하기**: 버튼을 누르면 신청이 완료되고 아래 명단에 추가됩니다.
+        """)
+
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -425,7 +414,6 @@ with tab1:
             
             st.divider()
             st.markdown("##### 📋 신청자 명단")
-            # [수정] 입금 에러 방지
             if '입금' not in df_public.columns: df_public['입금'] = "X"
             df_public['상태'] = df_public['입금'].apply(lambda x: "💸 입금완료" if str(x).strip().upper() == "O" else "-")
             
@@ -446,7 +434,6 @@ with tab2:
     else:
         df_final = pd.DataFrame(data_final)
         
-        # [변경] 카톡 텍스트 펼치기/접기
         with st.expander("💬 카카오톡 공유 텍스트 보기 (클릭)"):
             kakao_txt = generate_kakao_text(df_final)
             st.code(kakao_txt, language="text")
@@ -564,7 +551,6 @@ with tab6:
                     for p in team_b: schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']; schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
                 for idx, row in df.iterrows():
                     name = row['이름']
-                    # [수정] KeyError 방지: 맵에 이름이 있을 때만 업데이트
                     if name in schedule_map:
                         for r in range(1, 4): df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', ''); df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
