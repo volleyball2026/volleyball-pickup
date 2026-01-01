@@ -8,7 +8,6 @@ from datetime import datetime
 import re
 
 # --- [설정] ---
-# KEY_FILE_PATH 삭제 (이제 필요 없습니다)
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
@@ -16,25 +15,32 @@ SHEET_HISTORY = "경기기록"
 SHEET_BLACKLIST = "블랙리스트"
 SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
-ADMIN_PASSWORD = "1234"
+ADMIN_PASSWORD = "1992"  # [수정] 비밀번호 변경
 
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
-LEVELS = ["입문 (Beginner)", "초급 (Recreational)", "중급 (Intermediate)", "상급 (Advanced)", "최상급 (Elite)"]
+# [수정] 레벨 선택지 (드롭다운에 표시될 내용)
+LEVELS = [
+    "입문 (Beginner) - 기본기 부족, 경기 어려움",
+    "초급 (Recreational) - 게임 경험 적음, 참여 가능",
+    "중급 (Intermediate) - 전국대회 출전 가능",
+    "상급 (Advanced) - 전국대회 상위 입상 가능",
+    "최상급 (Elite) - 선수 출신 준하는 실력"
+]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 
-# --- [구글 시트 연결 (수정됨)] ---
+# --- [구글 시트 연결] ---
 def get_sheet_instance(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # 1. 서버(Streamlit Cloud)에 배포되었을 때
+        # 배포 시 Secrets 사용 / 로컬에서는 예외처리
         if "gcp_service_account" in st.secrets:
             key_dict = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
-        # 2. 내 컴퓨터에서 실행할 때 (혹시 몰라 남겨둠)
         else:
+            # 로컬 테스트용
             creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
             
         client = gspread.authorize(creds)
@@ -328,9 +334,9 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🛠️ 배포용 코드 최적화 (Secrets 적용)
-    - 📤 카카오톡 공유 텍스트 (접기/펼치기)
-    - 🎨 탭 순서 변경 (참가자 우선)
+    - 🛠️ 게임 개설 알림 메시지 수정
+    - 🔒 관리자 보안 업데이트
+    - 📘 전 메뉴 이용 가이드 추가
     """)
     st.caption("문의: 운영진")
 
@@ -372,7 +378,18 @@ with tab1:
                 c1, c2 = st.columns(2)
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
+                
+                # [수정] 레벨 설명 가이드 추가
+                with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
+                    st.markdown("""
+                    - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
+                    - **초급**: 게임 경험은 적지만 참여 가능
+                    - **중급**: 전국대회에 무리 없이 참여할 수 있는 수준
+                    - **상급**: 전국대회 상위 무대에서도 원활히 활동 가능
+                    - **최상급**: 전국대회 최상위권, 선출 준하는 실력
+                    """)
                 level = st.selectbox("참가자 레벨", LEVELS)
+                
                 st.markdown("---")
                 p1, p2, p3 = st.columns(3)
                 with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
@@ -428,6 +445,14 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
+    # [수정] 가이드 추가
+    with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
+        st.markdown("""
+        - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
+        - **포지션 아이콘**: ✅(1순위 배정), ⚠️(2/3순위 배정)
+        - **공유하기**: 아래 텍스트 상자를 펼쳐 카톡방에 공유할 수 있습니다.
+        """)
+
     st.header("📋 이번 주 라인업")
     data_final = load_applicants()
     if not data_final: st.info("확정 전")
@@ -467,6 +492,10 @@ with tab2:
 
 # --- 탭 3: My Page ---
 with tab3:
+    # [수정] 가이드 추가
+    with st.expander("📘 이용 가이드: 내 정보 확인", expanded=False):
+        st.write("본인의 이름과 연락처를 입력하면 '입금 확인 여부'와 '과거 경기 기록'을 조회할 수 있습니다.")
+
     st.header("📊 My Page")
     with st.form("my_history"):
         c1, c2 = st.columns(2)
@@ -493,6 +522,10 @@ with tab3:
 
 # --- 탭 4: MVP ---
 with tab4:
+    # [수정] 가이드 추가
+    with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
+        st.write("오늘 경기에서 가장 멋진 활약을 펼친 선수에게 투표해주세요! (1인 1표, 중복 투표 불가)")
+
     st.header("🏆 MVP 투표")
     apps = load_applicants()
     if apps:
@@ -623,7 +656,8 @@ with tab7:
                 info = {"제목": title, "일시": dt, "장소": loc, "성별": gender, "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, "마감일시": deadline_str}
                 save_game_info(info)
                 if reset_chk: archive_current_game(); clear_applicants()
-                st.success(f"개설 완료!"), st.rerun()
+                # [수정] 성공 메시지 변경
+                st.success("게임이 개설되었습니다."), st.rerun()
         
         st.divider()
         st.subheader("🚨 블랙리스트")
