@@ -8,7 +8,6 @@ from datetime import datetime
 import re
 
 # --- [설정] ---
-# KEY_FILE_PATH는 배포 시 st.secrets를 사용하므로 삭제했습니다.
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
@@ -34,13 +33,10 @@ POSITION_QUOTAS = {
     "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1
 }
 
-# --- [구글 시트 연결 (배포용 수정 완료)] ---
+# --- [구글 시트 연결] ---
 def get_sheet_instance(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # [변경] Streamlit 클라우드의 'Secrets'에서 키 정보를 가져옴
-        # 로컬(내 컴퓨터)에서 테스트할 때는 .streamlit/secrets.toml 파일이 필요할 수 있습니다.
-        # 배포 후에는 Streamlit Cloud 설정 페이지의 Secrets 영역에 내용을 입력해야 합니다.
         key_dict = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         client = gspread.authorize(creds)
@@ -50,7 +46,6 @@ def get_sheet_instance(sheet_name):
         except:
             return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
     except Exception as e:
-        # st.error(f"시트 연결 오류: {e}") # 디버깅용
         return None
 
 # --- [유틸리티] ---
@@ -71,7 +66,7 @@ def simplify_level_name(level_full):
     if not isinstance(level_full, str): return str(level_full)
     return level_full.split(" ")[0]
 
-# --- [기능 1: 게임 정보] ---
+# --- [핵심 기능 함수들] ---
 def save_game_info(info_dict):
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
@@ -102,7 +97,6 @@ def archive_current_game():
                 rows.append([game_date, game_title, p['이름'], p['연락처'], p['1순위'], p['레벨']])
             for r in rows: dst_sheet.append_row(r)
 
-# --- [기능 2: 참가자 관리] ---
 def load_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet: return sheet.get_all_records()
@@ -111,7 +105,6 @@ def load_applicants():
 def add_applicant(name, phone, level, pos1, pos2, pos3):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
-        # 14개 컬럼 데이터 (M:마스킹이름, N:입금)
         row_data = [
             name, normalize_phone(phone), level, pos1, pos2, pos3, 
             "", "", "", pos1, pos2, pos3, 
@@ -137,7 +130,6 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # 헤더 14개
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
@@ -145,11 +137,8 @@ def update_lineup(df):
         ]
         sheet.append_row(headers)
         
-        # 컬럼 생성 및 데이터 보정
-        if '이름(가림)' not in df.columns:
-            df['이름(가림)'] = df['이름'].apply(anonymize_name)
-        if '입금' not in df.columns:
-            df['입금'] = 'X'
+        if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
+        if '입금' not in df.columns: df['입금'] = 'X'
             
         final_cols = headers
         for col in final_cols:
@@ -168,7 +157,6 @@ def clear_applicants():
         ]
         sheet.append_row(headers)
 
-# --- [기타 기능들] ---
 def check_blacklist(name, phone):
     sheet = get_sheet_instance(SHEET_BLACKLIST)
     if sheet:
@@ -282,7 +270,7 @@ def assign_positions_in_team(team_members, history, wait_history):
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # 로직: 1순위 -> 2순위 -> 3순위 -> 대기
+    # 1순위 -> 2순위 -> 3순위 -> 대기
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
@@ -343,22 +331,32 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🛠️ 배포용 코드 최적화 (Secrets 적용)
-    - 📤 카톡 공유 텍스트 접기 기능
-    - 🎨 탭 순서 최적화
+    - 📘 초보자를 위한 상세 가이드 추가
+    - 📱 모바일 가독성 최적화
+    - 🛠️ 시스템 안정화
     """)
     st.caption("문의: 운영진")
 
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-# 탭 순서: 참가신청 -> 라인업공개 -> 마이페이지 -> MVP -> 소리함 -> 라인업생성 -> 관리자
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
+    # [가이드]
+    with st.expander("📘 이용 가이드: 어떻게 신청하나요?", expanded=False):
+        st.markdown("""
+        1. **게임 정보 확인**: 상단에 표시된 일시, 장소, 참가비를 확인하세요.
+        2. **신청서 작성**: 이름, 연락처, 레벨, 희망 포지션을 입력하세요.
+           - **1순위**: 가장 자신 있는 주 포지션
+           - **2/3순위**: 1순위가 겹칠 경우 대체 가능한 포지션
+        3. **신청하기**: 버튼을 누르면 신청이 완료되고 아래 명단에 추가됩니다.
+        4. **취소하기**: 사정이 생기면 하단의 '신청 취소' 메뉴를 이용해주세요.
+        """)
+
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -372,8 +370,7 @@ with tab1:
             st.write(f"**💰 참가비:** {current_game['참가비']}")
             if is_expired: st.error(f"**⏰ 마감:** {deadline_str} (종료)")
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
-        st.divider()
-
+        
         if is_expired: st.warning("🚫 **참가 신청 기간이 지났습니다.**")
         else:
             st.write("### 👇 참가 신청서")
@@ -382,7 +379,6 @@ with tab1:
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
                 level = st.selectbox("참가자 레벨", LEVELS)
-                st.markdown("---")
                 p1, p2, p3 = st.columns(3)
                 with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
                 with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
@@ -396,8 +392,9 @@ with tab1:
                             st.success(f"{name}님 신청 완료!"), st.rerun()
                     else: st.error("필수 입력 누락")
             
-            with st.expander("🗑️ 신청 취소"):
+            with st.expander("🗑️ 신청을 취소하고 싶어요"):
                 with st.form("cancel"):
+                    st.caption("신청할 때 입력한 정보를 정확히 입력해주세요.")
                     cc1, cc2 = st.columns(2)
                     with cc1: c_name = st.text_input("이름")
                     with cc2: c_phone = st.text_input("연락처")
@@ -407,10 +404,12 @@ with tab1:
                         else: st.error(msg)
 
         st.divider()
-        st.subheader("📊 실시간 참가 신청 현황")
+        st.subheader("📊 참가 신청 현황")
         applicants = load_applicants()
         if applicants:
             df_public = pd.DataFrame(applicants)
+            
+            # [모바일 최적화] 경쟁률 요약
             st.markdown("##### 🚦 포지션 경쟁률")
             if '1순위' in df_public.columns:
                 counts = df_public['1순위'].value_counts()
@@ -418,18 +417,20 @@ with tab1:
                 cols = st.columns(4)
                 for idx, (pos, count) in enumerate(counts.items()):
                     with cols[idx % 4]:
-                        if count > MAX_SLOTS: st.metric(label=pos, value=f"{count}명", delta="초과!", delta_color="inverse")
-                        else: st.metric(label=pos, value=f"{count}명", delta="여유")
+                        if count > MAX_SLOTS: st.metric(label=pos, value=f"{count}", delta="초과", delta_color="inverse")
+                        else: st.metric(label=pos, value=f"{count}", delta="여유")
             
-            st.divider()
+            st.markdown("---")
             st.markdown("##### 📋 신청자 명단")
+            # [모바일 최적화] 표 컬럼 간소화 (가로 스크롤 최소화)
             if '입금' not in df_public.columns: df_public['입금'] = "X"
-            df_public['상태'] = df_public['입금'].apply(lambda x: "💸 입금완료" if str(x).strip().upper() == "O" else "-")
+            df_public['상태'] = df_public['입금'].apply(lambda x: "💸 완료" if str(x).strip().upper() == "O" else "-")
             
             if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
             if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
             
-            show_cols = ["이름", "상태", "레벨", "1순위", "2순위"]
+            # 꼭 필요한 정보만 표시
+            show_cols = ["이름", "상태", "레벨", "1순위"]
             real_cols = [c for c in show_cols if c in df_public.columns]
             st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True)
         else: st.info("아직 신청자가 없습니다.")
@@ -437,17 +438,27 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
+    # [가이드]
+    with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
+        st.markdown("""
+        - **팀 배정**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
+        - **세트 구성**: 총 6세트이며, 2세트씩 묶여서 운영됩니다. (1·2 / 3·4 / 5·6)
+        - **아이콘 설명**:
+            - ✅: 본인의 1순위 포지션에 배정됨
+            - ⚠️: 경쟁에 밀려 2/3순위 포지션에 배정됨
+            - 🛌 **대기**: 이번 세트는 휴식 (다음 세트 0순위 배정)
+        """)
+
     st.header("📋 이번 주 라인업")
     data_final = load_applicants()
-    if not data_final: st.info("확정 전")
+    if not data_final: st.info("아직 라인업이 확정되지 않았습니다. 잠시만 기다려주세요.")
     else:
         df_final = pd.DataFrame(data_final)
         
-        # [변경] 카톡 텍스트 펼치기/접기
-        with st.expander("💬 카카오톡 공유 텍스트 보기 (클릭)"):
+        with st.expander("💬 카카오톡 공유용 텍스트 (클릭)"):
             kakao_txt = generate_kakao_text(df_final)
             st.code(kakao_txt, language="text")
-            st.caption("👆 오른쪽 위 복사 버튼을 눌러 단톡방에 붙여넣으세요.")
+            st.caption("👆 우측 상단 복사 버튼을 눌러 단톡방에 공유하세요.")
         
         st.divider()
 
@@ -463,12 +474,12 @@ with tab2:
                             st.error("🔴 A팀")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
                                 icon = "✅" if r[col_pos]==r['1순위'] else "⚠️"
-                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
+                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon})")
                         with c2:
                             st.info("🔵 B팀")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
                                 icon = "✅" if r[col_pos]==r['1순위'] else "⚠️"
-                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
+                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon})")
                         st.markdown("---")
                         bench = playing[playing[col_pos]=="대기"]
                         if not bench.empty:
@@ -477,55 +488,67 @@ with tab2:
 
 # --- 탭 3: My Page ---
 with tab3:
+    # [가이드]
+    with st.expander("📘 이용 가이드: 내 정보 확인", expanded=False):
+        st.write("본인의 이름과 연락처를 입력하면 '입금 확인 여부'와 '과거 경기 기록'을 볼 수 있습니다.")
+
     st.header("📊 My Page")
     with st.form("my_history"):
         c1, c2 = st.columns(2)
         with c1: my_name = st.text_input("이름")
         with c2: my_phone = st.text_input("연락처")
-        if st.form_submit_button("조회"):
+        if st.form_submit_button("조회하기"):
             if my_name and my_phone:
                 clean_phone = normalize_phone(my_phone)
                 cur_apps = load_applicants()
                 my_cur = [p for p in cur_apps if p['이름']==my_name and normalize_phone(p['연락처'])==clean_phone]
+                
                 st.subheader("📍 현재 신청 상태")
                 if my_cur:
-                    status = "💸 입금완료" if str(my_cur[0].get('입금')).upper() == 'O' else "미입금"
-                    st.success(f"신청 확인됨! (상태: {status})")
-                    st.dataframe(pd.DataFrame(my_cur)[['이름', '1순위', '레벨']], hide_index=True)
-                else: st.warning("현재 신청 내역 없음")
+                    status = "💸 입금완료" if str(my_cur[0].get('입금')).upper() == 'O' else "❌ 미입금 (확인중)"
+                    st.success(f"신청이 확인되었습니다. (상태: {status})")
+                    # 모바일 최적화를 위해 컬럼 줄임
+                    st.dataframe(pd.DataFrame(my_cur)[['이름', '1순위']], hide_index=True)
+                else: st.warning("이번 주 신청 내역이 없습니다.")
+                
                 st.divider()
                 hist = get_my_history(my_name, my_phone)
-                st.subheader("📜 과거 기록")
+                st.subheader("📜 과거 참가 기록")
                 if hist:
-                    st.success(f"총 {len(hist)}회 참가")
-                    st.dataframe(pd.DataFrame(hist)[['일시', '게임제목', '1순위', '레벨']], hide_index=True)
-                else: st.info("기록 없음")
+                    st.success(f"총 {len(hist)}회 참가하셨습니다.")
+                    st.dataframe(pd.DataFrame(hist)[['일시', '게임제목']], hide_index=True)
+                else: st.info("과거 기록이 없습니다.")
 
 # --- 탭 4: MVP ---
 with tab4:
+    # [가이드]
+    with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
+        st.write("오늘 경기에서 가장 멋진 활약을 펼친 선수에게 투표해주세요! (1인 1표)")
+
     st.header("🏆 MVP 투표")
     apps = load_applicants()
     if apps:
         df_mvp = pd.DataFrame(apps)
         with st.form("mvp"):
-            voter = st.text_input("투표자 이름")
+            voter = st.text_input("투표자 이름 (본인)")
             vphone = st.text_input("투표자 연락처")
             st.markdown("---")
-            choice = st.selectbox("🏅 MVP 선택", df_mvp['이름'].tolist())
-            if st.form_submit_button("투표"):
+            choice = st.selectbox("🏅 오늘의 MVP는?", df_mvp['이름'].tolist())
+            if st.form_submit_button("투표하기"):
                 if voter and vphone:
                     suc, msg = save_mvp_vote(voter, vphone, choice)
                     if suc: st.balloons(); st.success(msg)
                     else: st.error(msg)
-                else: st.error("정보 입력 필요")
+                else: st.error("정보를 모두 입력해주세요.")
         st.divider()
-        st.subheader("📊 실시간 득표 Top 5")
+        st.subheader("📊 실시간 득표 현황 (Top 5)")
         rank = get_mvp_ranking_today()
         if not rank.empty: st.dataframe(rank.head(5), hide_index=True, use_container_width=True)
-        else: st.info("투표 없음")
-    else: st.warning("명단 없음")
+        else: st.info("아직 투표가 없습니다.")
+    else: st.warning("참가자 명단이 없어 투표할 수 없습니다.")
+    
     st.markdown("---")
-    st.subheader("👑 명예의 전당")
+    st.subheader("👑 명예의 전당 (역대 MVP)")
     hof = get_mvp_hall_of_fame()
     if len(hof)>0: 
         hof['날짜'] = hof['일시']; hof['MVP'] = hof['MVP후보']
@@ -533,13 +556,15 @@ with tab4:
 
 # --- 탭 5: 소리함 ---
 with tab5:
+    with st.expander("📘 이용 가이드: 소리함이란?", expanded=False):
+        st.write("운영진에게 건의사항이나 하고 싶은 말을 **익명**으로 보낼 수 있습니다. 이름은 수집되지 않습니다.")
+
     st.header("🗣️ 소리함 (익명)")
-    st.write("운영진에게 하고 싶은 말을 남겨주세요.")
     with st.form("suggestion_box"):
-        msg = st.text_area("내용", height=150)
+        msg = st.text_area("내용을 입력해주세요", height=150)
         if st.form_submit_button("보내기"):
             if msg:
-                if save_suggestion(msg): st.success("전송 완료!")
+                if save_suggestion(msg): st.success("소중한 의견이 전달되었습니다!")
                 else: st.error("전송 실패")
             else: st.warning("내용을 입력해주세요.")
 
@@ -552,8 +577,11 @@ with tab6:
         if not data: st.warning("참가자 없음")
         else:
             df = pd.DataFrame(data)
-            if st.button("🎲 계산 시작"):
-                with st.spinner("계산 중..."): st.session_state['fair_results'] = generate_fair_schedule(df); st.success("완료!")
+            if st.button("🎲 라인업 계산 시작"):
+                with st.spinner("알고리즘이 최적의 팀을 계산 중입니다..."): 
+                    st.session_state['fair_results'] = generate_fair_schedule(df)
+                    st.success("계산 완료! 아래에서 확인 후 저장하세요.")
+            
             if 'fair_results' in st.session_state:
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
@@ -561,7 +589,6 @@ with tab6:
                     for p in team_b: schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']; schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
                 for idx, row in df.iterrows():
                     name = row['이름']
-                    # [중요] 맵에 이름이 있을 때만 업데이트 (KeyError 방지)
                     if name in schedule_map:
                         for r in range(1, 4): df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', ''); df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
@@ -582,8 +609,8 @@ with tab6:
             # 14개 컬럼 에디터
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
-            if st.button("저장 (공개)"):
-                final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
+            if st.button("결과 저장 및 공개"):
+                final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장되었습니다! '라인업 공개' 탭에서 확인하세요.")
 
 # --- 탭 7: 관리자 ---
 with tab7:
@@ -596,7 +623,7 @@ with tab7:
             df_manage = pd.DataFrame(apps)
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             
-            # [수정] CheckboxColumn 에러 해결을 위해 boolean으로 변환 후 표시
+            # Checkbox 에러 방지를 위해 boolean 변환
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             
             cols_manage = ["이름", "연락처", "입금_bool", "1순위"]
@@ -607,7 +634,6 @@ with tab7:
             )
             
             if st.button("입금 현황 저장"):
-                # 저장 시 다시 O/X로 변환
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
@@ -615,9 +641,9 @@ with tab7:
         else: st.info("신청자 없음")
 
         st.divider()
-        st.subheader("🛠️ 게임 개설")
+        st.subheader("🛠️ 새 게임 개설")
         with st.form("create_game"):
-            reset_chk = st.checkbox("명단 초기화 (아카이빙)", value=True)
+            reset_chk = st.checkbox("명단 초기화 (기존 기록 아카이빙)", value=True)
             title = st.text_input("게임 제목")
             dt = st.text_input("일시")
             loc = st.text_input("장소")
@@ -626,8 +652,8 @@ with tab7:
             with col_d: dead_date = st.date_input("마감 날짜")
             with col_t: dead_time = st.time_input("마감 시간")
             fee = st.text_input("참가비")
-            acc = st.text_input("계좌")
-            contact = st.text_input("연락처")
+            acc = st.text_input("계좌번호")
+            contact = st.text_input("문의 연락처")
             desc = st.text_area("공지사항")
             if st.form_submit_button("개설하기"):
                 deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
@@ -637,7 +663,7 @@ with tab7:
                 st.success(f"개설 완료!"), st.rerun()
         
         st.divider()
-        st.subheader("🚨 블랙리스트")
+        st.subheader("🚨 블랙리스트 관리")
         with st.form("blacklist"):
             c1, c2, c3 = st.columns(3)
             with c1: b_name = st.text_input("이름")
@@ -647,17 +673,16 @@ with tab7:
                 add_to_blacklist(b_name, b_phone, b_reason); st.success("등록됨")
         
         st.divider()
-        st.subheader("🗣️ 건의함")
+        st.subheader("🗣️ 건의함 내용")
         suggestions = load_suggestions()
         if suggestions: st.dataframe(suggestions, use_container_width=True)
         else: st.info("건의 없음")
 
         st.divider()
-        with st.expander("🛠️ 라인업 비상 수정"):
+        with st.expander("🛠️ 라인업 비상 수정 (수동)"):
             if apps:
                 cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
                 df_final = pd.DataFrame(apps)
-                # 컬럼 보정
                 for c in cols_edit: 
                     if c not in df_final.columns: df_final[c] = ""
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
