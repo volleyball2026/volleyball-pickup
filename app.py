@@ -6,9 +6,10 @@ import random
 import copy
 from datetime import datetime
 import re
+import time
 
 # --- [설정] ---
-DOC_NAME = "배구픽업관리"  # 구글 시트 파일 이름과 100% 일치해야 함
+DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
 SHEET_HISTORY = "경기기록"
@@ -20,7 +21,6 @@ ADMIN_PASSWORD = "1992"
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
-LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 LEVELS = [
     "입문 (Beginner) - 기본기 부족, 경기 어려움",
     "초급 (Recreational) - 게임 경험 적음, 참여 가능",
@@ -29,9 +29,12 @@ LEVELS = [
     "최상급 (Elite) - 선수 출신 준하는 실력"
 ]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
+LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
 # --- [구글 시트 연결] ---
-def get_sheet_instance(sheet_name):
+# @st.cache_resource는 연결 객체 자체를 기억해서 재연결 횟수를 줄입니다.
+@st.cache_resource
+def get_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
         if "gcp_service_account" in st.secrets:
@@ -39,16 +42,23 @@ def get_sheet_instance(sheet_name):
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         else:
             creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
-            
         client = gspread.authorize(creds)
-        doc = client.open(DOC_NAME)
-        try:
-            return doc.worksheet(sheet_name)
-        except:
-            # 시트가 없으면 생성
-            return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
+        return client
     except Exception as e:
         return None
+
+def get_sheet_instance(sheet_name):
+    client = get_connection()
+    if client:
+        try:
+            doc = client.open(DOC_NAME)
+            try:
+                return doc.worksheet(sheet_name)
+            except:
+                return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
+        except:
+            return None
+    return None
 
 # --- [유틸리티] ---
 def normalize_phone(phone):
@@ -77,7 +87,10 @@ def save_game_info(info_dict):
             info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
             info_dict['설명'], info_dict['연락처'], info_dict['마감일시']
         ])
+        st.cache_data.clear() # 데이터 변경 시 캐시 초기화
 
+# [캐싱 적용] 10초 동안 데이터를 기억하여 API 호출을 줄임
+@st.cache_data(ttl=10)
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
@@ -89,21 +102,31 @@ def archive_current_game():
     src_sheet = get_sheet_instance(SHEET_APPLICANTS)
     dst_sheet = get_sheet_instance(SHEET_HISTORY)
     game_info = get_current_game_info()
+    
     if src_sheet and dst_sheet and game_info:
         data = src_sheet.get_all_records()
         
-        # 헤더가 없는 경우 대비 (KeyError 방지)
+        # [수정] 헤더가 없으면 헤더 추가 (KeyError 방지)
         if not dst_sheet.get_all_values():
             dst_sheet.append_row(['일시', '게임제목', '이름', '연락처', '1순위', '레벨'])
-
+            
         if data:
             rows = []
             game_date = game_info.get('일시', datetime.now().strftime("%Y-%m-%d"))
             game_title = game_info.get('제목', 'Untitled')
             for p in data:
-                rows.append([game_date, game_title, p.get('이름',''), p.get('연락처',''), p.get('1순위',''), p.get('레벨','')])
+                # 안전하게 값 가져오기
+                rows.append([
+                    game_date, game_title, 
+                    p.get('이름', ''), p.get('연락처', ''), 
+                    p.get('1순위', ''), p.get('레벨', '')
+                ])
             for r in rows: dst_sheet.append_row(r)
+        
+        st.cache_data.clear()
 
+# [캐싱 적용] 참가자 명단 읽기 부하 감소
+@st.cache_data(ttl=5)
 def load_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet: return sheet.get_all_records()
@@ -118,6 +141,7 @@ def add_applicant(name, phone, level, pos1, pos2, pos3):
             anonymize_name(name), "X"
         ]
         sheet.append_row(row_data)
+        st.cache_data.clear() # 새로운 신청자가 있으므로 캐시 즉시 삭제
 
 def cancel_applicant(name, phone):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
@@ -129,6 +153,7 @@ def cancel_applicant(name, phone):
                 row_phone = sheet.cell(cell.row, 2).value
                 if normalize_phone(row_phone) == clean_phone:
                     sheet.delete_rows(cell.row)
+                    st.cache_data.clear() # 취소 시 캐시 삭제
                     return True, "취소되었습니다."
             return False, "정보가 일치하지 않습니다."
         except: return False, "오류 발생"
@@ -152,6 +177,7 @@ def update_lineup(df):
             if col not in df.columns: df[col] = ""
                 
         sheet.append_rows(df[final_cols].values.tolist())
+        st.cache_data.clear()
 
 def clear_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
@@ -163,6 +189,7 @@ def clear_applicants():
             "이름(가림)", "입금"
         ]
         sheet.append_row(headers)
+        st.cache_data.clear()
 
 def check_blacklist(name, phone):
     sheet = get_sheet_instance(SHEET_BLACKLIST)
@@ -182,12 +209,13 @@ def get_my_history(name, phone):
     history = []
     if sheet:
         clean_phone = normalize_phone(phone)
-        for row in sheet.get_all_records():
-            # KeyError 방지를 위한 .get() 사용
-            row_name = row.get('이름', '')
-            row_phone = row.get('연락처', '')
-            if row_name == name and normalize_phone(row_phone) == clean_phone:
-                history.append(row)
+        try:
+            records = sheet.get_all_records()
+            for row in records:
+                if row.get('이름') == name and normalize_phone(row.get('연락처')) == clean_phone:
+                    history.append(row)
+        except:
+            pass # 헤더 오류 등 발생 시 빈 리스트 반환
     return history
 
 def save_mvp_vote(voter, phone, mvp_candidate):
@@ -200,9 +228,11 @@ def save_mvp_vote(voter, phone, mvp_candidate):
             if row['투표자이름'] == voter and normalize_phone(row['투표자연락처']) == clean_phone and row['일시'] == today:
                 return False, "이미 투표하셨습니다."
         sheet.append_row([today, voter, clean_phone, mvp_candidate])
+        st.cache_data.clear()
         return True, "투표 완료!"
     return False, "오류"
 
+@st.cache_data(ttl=10)
 def get_mvp_ranking_today():
     sheet = get_sheet_instance(SHEET_MVP)
     if sheet:
@@ -217,6 +247,7 @@ def get_mvp_ranking_today():
         return ranking
     return pd.DataFrame()
 
+@st.cache_data(ttl=60)
 def get_mvp_hall_of_fame():
     sheet = get_sheet_instance(SHEET_MVP)
     if sheet:
@@ -340,19 +371,17 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🛠️ API 연결 안정성 강화
-    - 📝 경기기록 조회 오류(KeyError) 수정
-    - 🔒 관리자 보안 업데이트
+    - 🛠️ 시스템 안정성 대폭 강화
+    - ⚡ 속도 개선 (캐싱 적용)
+    - 📝 경기기록 오류 수정
     """)
     st.caption("문의: 운영진")
     
-    # [연결 상태 진단]
     st.divider()
     if get_sheet_instance(SHEET_APPLICANTS):
         st.success("✅ 구글 시트 연결됨")
     else:
         st.error("❌ 구글 시트 연결 실패")
-        st.caption("1. 파일명 '배구픽업관리' 확인\n2. '배구픽업관리' 시트에 봇 이메일 공유 확인")
 
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
@@ -525,17 +554,15 @@ with tab3:
                 else: st.warning("현재 신청 내역 없음")
                 st.divider()
                 
-                # [수정] KeyError 방지: 데이터가 있는지, 컬럼이 맞는지 확인 후 표시
                 hist = get_my_history(my_name, my_phone)
                 st.subheader("📜 과거 기록")
                 if hist:
                     df_hist = pd.DataFrame(hist)
-                    # 필요한 컬럼이 다 있는지 확인
+                    # 데이터가 있지만 필수 컬럼이 누락된 경우 전체 표시
                     req_cols = ['일시', '게임제목', '1순위', '레벨']
                     if set(req_cols).issubset(df_hist.columns):
                         st.dataframe(df_hist[req_cols], hide_index=True)
                     else:
-                        # 컬럼이 하나라도 없으면 그냥 전체 다 보여줌 (에러 방지)
                         st.dataframe(df_hist, hide_index=True)
                     st.success(f"총 {len(hist)}회 참가")
                 else: 
@@ -676,7 +703,6 @@ with tab7:
                 info = {"제목": title, "일시": dt, "장소": loc, "성별": gender, "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, "마감일시": deadline_str}
                 save_game_info(info)
                 if reset_chk: archive_current_game(); clear_applicants()
-                # [수정] 성공 메시지 변경
                 st.success("게임이 개설되었습니다."), st.rerun()
         
         st.divider()
