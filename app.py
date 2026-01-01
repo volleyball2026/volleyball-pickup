@@ -8,7 +8,7 @@ from datetime import datetime
 import re
 
 # --- [설정] ---
-KEY_FILE_PATH = r"C:\Users\82106\service_account.json"
+# KEY_FILE_PATH 변수는 배포 버전에서 삭제합니다.
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
 SHEET_GAME_INFO = "게임정보"
@@ -34,11 +34,19 @@ POSITION_QUOTAS = {
     "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1
 }
 
-# --- [구글 시트 연결] ---
+# --- [구글 시트 연결 (배포용 수정 완료)] ---
 def get_sheet_instance(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE_PATH, scope)
+        # [수정됨] 로컬 경로 대신 st.secrets 사용
+        if "gcp_service_account" in st.secrets:
+            key_dict = st.secrets["gcp_service_account"]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+        else:
+            # 혹시나 로컬에서 돌릴 경우를 대비한 예외 처리 (필요시 경로 수정)
+            # 배포 환경에서는 위 if문이 실행됩니다.
+            return None
+            
         client = gspread.authorize(creds)
         doc = client.open(DOC_NAME)
         try:
@@ -46,6 +54,8 @@ def get_sheet_instance(sheet_name):
         except:
             return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
     except Exception as e:
+        # 에러 발생 시 화면에 표시하여 원인 파악 (배포 후 삭제 가능)
+        st.error(f"시트 연결 오류: {e}")
         return None
 
 # --- [유틸리티] ---
@@ -75,6 +85,8 @@ def save_game_info(info_dict):
             info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
             info_dict['설명'], info_dict['연락처'], info_dict['마감일시']
         ])
+    else:
+        st.error("게임 정보를 저장할 시트를 찾을 수 없습니다.")
 
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
@@ -106,7 +118,6 @@ def load_applicants():
 def add_applicant(name, phone, level, pos1, pos2, pos3):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
-        # 14개 컬럼 데이터 (M:마스킹이름, N:입금)
         row_data = [
             name, normalize_phone(phone), level, pos1, pos2, pos3, 
             "", "", "", pos1, pos2, pos3, 
@@ -132,7 +143,6 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # 헤더 14개
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
@@ -140,13 +150,9 @@ def update_lineup(df):
         ]
         sheet.append_row(headers)
         
-        # [중요] 컬럼이 없을 경우를 대비해 생성
-        if '이름(가림)' not in df.columns:
-            df['이름(가림)'] = df['이름'].apply(anonymize_name)
-        if '입금' not in df.columns:
-            df['입금'] = 'X'
+        if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
+        if '입금' not in df.columns: df['입금'] = 'X'
             
-        # 순서대로 정렬 및 빈값 채우기
         final_cols = headers
         for col in final_cols:
             if col not in df.columns: df[col] = ""
@@ -278,7 +284,7 @@ def assign_positions_in_team(team_members, history, wait_history):
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # 로직: 1순위 -> 2순위 -> 3순위 -> 대기
+    # 1순위 -> 2순위 -> 3순위 -> 대기
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
@@ -348,7 +354,7 @@ with st.sidebar:
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-# [수정] 탭 순서: 참가신청 -> 라인업공개 -> 마이페이지 -> MVP -> 소리함 -> 라인업생성 -> 관리자
+# 탭 순서: 참가신청 -> 라인업공개 -> 마이페이지 -> MVP -> 소리함 -> 라인업생성 -> 관리자
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
@@ -440,7 +446,7 @@ with tab2:
     else:
         df_final = pd.DataFrame(data_final)
         
-        # [수정] 카톡 텍스트 펼치기/접기 (Expander)
+        # [변경] 카톡 텍스트 펼치기/접기
         with st.expander("💬 카카오톡 공유 텍스트 보기 (클릭)"):
             kakao_txt = generate_kakao_text(df_final)
             st.code(kakao_txt, language="text")
@@ -594,7 +600,7 @@ with tab7:
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             
             # [수정] 체크박스 에러 해결: True/False로 데이터 변환 후 에디터 표시
-            df_manage['입금_bool'] = df_manage['입금'] == 'O'
+            df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             
             cols_manage = ["이름", "연락처", "입금_bool", "1순위"]
             edited_manage = st.data_editor(
@@ -604,7 +610,7 @@ with tab7:
             )
             
             if st.button("입금 현황 저장"):
-                # 다시 O/X로 변환하여 저장
+                # 저장 시 다시 O/X로 변환
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
