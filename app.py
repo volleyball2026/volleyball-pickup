@@ -32,7 +32,6 @@ POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "�
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
 # --- [구글 시트 연결] ---
-# @st.cache_resource는 연결 객체 자체를 기억해서 재연결 횟수를 줄입니다.
 @st.cache_resource
 def get_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -87,9 +86,8 @@ def save_game_info(info_dict):
             info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
             info_dict['설명'], info_dict['연락처'], info_dict['마감일시']
         ])
-        st.cache_data.clear() # 데이터 변경 시 캐시 초기화
+        st.cache_data.clear()
 
-# [캐싱 적용] 10초 동안 데이터를 기억하여 API 호출을 줄임
 @st.cache_data(ttl=10)
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
@@ -105,8 +103,6 @@ def archive_current_game():
     
     if src_sheet and dst_sheet and game_info:
         data = src_sheet.get_all_records()
-        
-        # [수정] 헤더가 없으면 헤더 추가 (KeyError 방지)
         if not dst_sheet.get_all_values():
             dst_sheet.append_row(['일시', '게임제목', '이름', '연락처', '1순위', '레벨'])
             
@@ -115,17 +111,14 @@ def archive_current_game():
             game_date = game_info.get('일시', datetime.now().strftime("%Y-%m-%d"))
             game_title = game_info.get('제목', 'Untitled')
             for p in data:
-                # 안전하게 값 가져오기
                 rows.append([
                     game_date, game_title, 
                     p.get('이름', ''), p.get('연락처', ''), 
                     p.get('1순위', ''), p.get('레벨', '')
                 ])
             for r in rows: dst_sheet.append_row(r)
-        
         st.cache_data.clear()
 
-# [캐싱 적용] 참가자 명단 읽기 부하 감소
 @st.cache_data(ttl=5)
 def load_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
@@ -141,7 +134,7 @@ def add_applicant(name, phone, level, pos1, pos2, pos3):
             anonymize_name(name), "X"
         ]
         sheet.append_row(row_data)
-        st.cache_data.clear() # 새로운 신청자가 있으므로 캐시 즉시 삭제
+        st.cache_data.clear()
 
 def cancel_applicant(name, phone):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
@@ -153,7 +146,7 @@ def cancel_applicant(name, phone):
                 row_phone = sheet.cell(cell.row, 2).value
                 if normalize_phone(row_phone) == clean_phone:
                     sheet.delete_rows(cell.row)
-                    st.cache_data.clear() # 취소 시 캐시 삭제
+                    st.cache_data.clear()
                     return True, "취소되었습니다."
             return False, "정보가 일치하지 않습니다."
         except: return False, "오류 발생"
@@ -215,7 +208,7 @@ def get_my_history(name, phone):
                 if row.get('이름') == name and normalize_phone(row.get('연락처')) == clean_phone:
                     history.append(row)
         except:
-            pass # 헤더 오류 등 발생 시 빈 리스트 반환
+            pass
     return history
 
 def save_mvp_vote(voter, phone, mvp_candidate):
@@ -371,9 +364,9 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
+    - 🔒 MVP 투표 보안 강화 (참가자 전용)
+    - 👤 인증된 참가자는 실명 투표 가능
     - 🛠️ 시스템 안정성 대폭 강화
-    - ⚡ 속도 개선 (캐싱 적용)
-    - 📝 경기기록 오류 수정
     """)
     st.caption("문의: 운영진")
     
@@ -558,7 +551,6 @@ with tab3:
                 st.subheader("📜 과거 기록")
                 if hist:
                     df_hist = pd.DataFrame(hist)
-                    # 데이터가 있지만 필수 컬럼이 누락된 경우 전체 표시
                     req_cols = ['일시', '게임제목', '1순위', '레벨']
                     if set(req_cols).issubset(df_hist.columns):
                         st.dataframe(df_hist[req_cols], hide_index=True)
@@ -568,38 +560,92 @@ with tab3:
                 else: 
                     st.info("기록 없음")
 
-# --- 탭 4: MVP ---
+# --- 탭 4: MVP (개선됨: 비공개 -> 실명) ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
-        st.write("오늘 경기에서 가장 멋진 활약을 펼친 선수에게 투표해주세요! (1인 1표, 중복 투표 불가)")
+        st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
 
     st.header("🏆 MVP 투표")
     apps = load_applicants()
-    if apps:
-        df_mvp = pd.DataFrame(apps)
-        with st.form("mvp"):
-            voter = st.text_input("투표자 이름")
-            vphone = st.text_input("투표자 연락처")
+    
+    # 세션 상태 초기화
+    if 'mvp_voter_verified' not in st.session_state:
+        st.session_state['mvp_voter_verified'] = False
+    if 'mvp_voter_name' not in st.session_state:
+        st.session_state['mvp_voter_name'] = ""
+    if 'mvp_voter_phone' not in st.session_state:
+        st.session_state['mvp_voter_phone'] = ""
+
+    if not apps:
+        st.warning("참가자 명단이 없어 투표할 수 없습니다.")
+    else:
+        # [상태 1] 인증 전: 로그인 폼 & 안내 메시지
+        if not st.session_state['mvp_voter_verified']:
+            st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
+            with st.form("mvp_auth"):
+                voter = st.text_input("이름")
+                vphone = st.text_input("연락처")
+                if st.form_submit_button("확인"):
+                    clean_vphone = normalize_phone(vphone)
+                    # 명단에서 확인
+                    found = False
+                    for p in apps:
+                        if p['이름'] == voter and normalize_phone(p['연락처']) == clean_vphone:
+                            found = True
+                            break
+                    
+                    if found:
+                        st.session_state['mvp_voter_verified'] = True
+                        st.session_state['mvp_voter_name'] = voter
+                        st.session_state['mvp_voter_phone'] = clean_vphone
+                        st.rerun()
+                    else:
+                        st.error("참가자 명단에 없는 정보입니다. (이름과 연락처를 확인해주세요)")
+            
+            st.divider()
+            st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
+
+        # [상태 2] 인증 후: 투표(실명) & 랭킹(실명) & 명예의 전당 공개
+        if st.session_state['mvp_voter_verified']:
+            st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
+            
+            # 후보자 리스트 (실명 사용)
+            df_mvp = pd.DataFrame(apps)
+            candidate_list = df_mvp['이름'].tolist()
+            
+            with st.form("mvp_submit"):
+                target_name = st.selectbox("🏅 MVP 선택 (실명 표시)", candidate_list)
+                
+                if st.form_submit_button("투표하기"):
+                    suc, msg = save_mvp_vote(
+                        st.session_state['mvp_voter_name'], 
+                        st.session_state['mvp_voter_phone'], 
+                        target_name
+                    )
+                    if suc:
+                        st.balloons()
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+            
+            if st.button("로그아웃"):
+                st.session_state['mvp_voter_verified'] = False
+                st.rerun()
+
+            st.divider()
+            st.subheader("📊 실시간 득표 현황 (Top 5)")
+            rank = get_mvp_ranking_today()
+            if not rank.empty: 
+                st.dataframe(rank.head(5), hide_index=True, use_container_width=True)
+            else: 
+                st.info("아직 투표가 없습니다.")
+
             st.markdown("---")
-            choice = st.selectbox("🏅 MVP 선택", df_mvp['이름'].tolist())
-            if st.form_submit_button("투표"):
-                if voter and vphone:
-                    suc, msg = save_mvp_vote(voter, vphone, choice)
-                    if suc: st.balloons(); st.success(msg)
-                    else: st.error(msg)
-                else: st.error("정보 입력 필요")
-        st.divider()
-        st.subheader("📊 실시간 득표 Top 5")
-        rank = get_mvp_ranking_today()
-        if not rank.empty: st.dataframe(rank.head(5), hide_index=True, use_container_width=True)
-        else: st.info("투표 없음")
-    else: st.warning("명단 없음")
-    st.markdown("---")
-    st.subheader("👑 명예의 전당")
-    hof = get_mvp_hall_of_fame()
-    if len(hof)>0: 
-        hof['날짜'] = hof['일시']; hof['MVP'] = hof['MVP후보']
-        st.dataframe(hof[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
+            st.subheader("👑 명예의 전당")
+            hof = get_mvp_hall_of_fame()
+            if len(hof)>0: 
+                hof['날짜'] = hof['일시']; hof['MVP'] = hof['MVP후보']
+                st.dataframe(hof[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
 
 # --- 탭 5: 소리함 ---
 with tab5:
@@ -665,7 +711,6 @@ with tab7:
             df_manage = pd.DataFrame(apps)
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             
-            # [수정] 체크박스 에러 해결: True/False로 데이터 변환 후 에디터 표시
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             
             cols_manage = ["이름", "연락처", "입금_bool", "1순위"]
@@ -676,7 +721,6 @@ with tab7:
             )
             
             if st.button("입금 현황 저장"):
-                # 저장 시 다시 O/X로 변환
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
@@ -726,7 +770,6 @@ with tab7:
             if apps:
                 cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
                 df_final = pd.DataFrame(apps)
-                # 에러 방지: 없는 컬럼 추가
                 for c in cols_edit:
                     if c not in df_final.columns: df_final[c] = ""
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
