@@ -21,14 +21,14 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📌 상단 탭 고정 기능 추가 (스크롤 편의성)",
+        "📝 운영 안내 내용 최신화",
         "🔰 운영 안내 탭 신설",
-        "🕒 늦참 시간 입력 기능 추가",
-        "🎨 디자인 단순화 (이미지 제거)"
+        "🕒 늦참 시간 입력 기능 추가"
     ],
     "2025.01.02": [
         "🔧 탭 튕김 현상 수정 (로그인 유지)",
-        "📝 업데이트 로그 날짜별 정리",
-        "🔽 레벨 선택지 간소화"
+        "📝 업데이트 로그 날짜별 정리"
     ]
 }
 
@@ -140,7 +140,6 @@ def load_applicants():
     if sheet: return sheet.get_all_records()
     return []
 
-# [수정] 늦참 시간(note) 추가
 def add_applicant(name, phone, level, pos1, pos2, pos3, note):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
@@ -171,7 +170,6 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # [수정] 비고(늦참) 컬럼 추가
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
@@ -378,6 +376,20 @@ def generate_fair_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
+# [CSS 스타일] 탭 고정 (Sticky Tabs)
+st.markdown("""
+    <style>
+        /* 탭 컨테이너를 화면 상단에 고정 */
+        div[data-testid="stTabsNav"] {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background-color: white; /* 배경색 지정 (투명 방지) */
+            padding-top: 1rem; /* 상단 여백 */
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 with st.sidebar:
     st.header("📢 Update Log")
     for date, logs in UPDATE_LOGS.items():
@@ -396,12 +408,11 @@ with st.sidebar:
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-# [수정] 탭 추가 (운영 안내)
 tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🔰 운영 안내", "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
-# --- 탭 0: 운영 안내 (신설) ---
+# --- 탭 0: 운영 안내 ---
 with tab0:
     st.header("즐겁게 배구하자! 월요배구회 🏐")
     st.markdown("""
@@ -410,14 +421,17 @@ with tab0:
     
     ### 📅 운동 정보
     - **시간**: 매주 월요일 (공휴일 제외) **18:30 ~ 21:30**
+        - 18:30 ~ 19:00: 몸풀기
+        - 19:00 ~ 19:20: 공격 및 서브 연습
+        - 19:20 ~ 21:30: 경기 진행
     - **장소**: (미정 - 추후 공지)
-    - **참가비**: 1회 5,000원 (변경 시 공지)
+    - **참가비**: **미정** (추후 공지)
     
     ### 📝 진행 방법
     1. **참가 신청**: 이 웹앱의 **[📢 참가 신청]** 탭에서 신청해주세요.
         - **지각 시**: 신청서의 **'도착 예정 시간'** 칸에 시간을 꼭 적어주세요.
     2. **경기 진행**: 12명 이상 모이면 경기를 진행합니다.
-    3. **성별**: 혼성 경기이며, 여성 게스트도 환영합니다! (18명 미만 시 여성은 수비 선수로 참가)
+    3. **성별**: **남성 경기**이며, 남성 18명 미만 시 여성은 **수비 선수로만** 참가 가능합니다.
     4. **팀 배정**: 실력 균형을 맞춘 **자동 라인업 시스템**을 사용합니다. (편애 NO!)
     
     ### ✨ 이 앱의 특별한 기능
@@ -429,7 +443,7 @@ with tab0:
     **문의사항은 오픈채팅방을 이용해주세요.**
     """)
 
-# --- 탭 1: 참가 신청 (수정됨) ---
+# --- 탭 1: 참가 신청 ---
 with tab1:
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
@@ -454,7 +468,6 @@ with tab1:
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
                 
-                # [수정] 레벨 & 늦참 시간 가로 배치
                 with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                     st.markdown("""
                     - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
@@ -515,7 +528,6 @@ with tab1:
             if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
             if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
             
-            # [수정] 비고(늦참) 컬럼 표시
             if '비고' not in df_public.columns: df_public['비고'] = ""
             
             show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
@@ -741,7 +753,6 @@ with tab6:
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": st.write(f"- {p['assigned_pos']}: {p['이름']}")
             st.divider()
-            # [수정] 비고 컬럼 추가
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
@@ -829,8 +840,8 @@ with tab7:
             if apps:
                 cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
                 df_final = pd.DataFrame(apps)
-                # 에러 방지
-                for c in cols_edit: 
+                # 에러 방지: 없는 컬럼 추가
+                for c in cols_edit:
                     if c not in df_final.columns: df_final[c] = ""
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
                 if st.button("비상 저장"):
