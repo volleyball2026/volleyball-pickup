@@ -21,6 +21,7 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "🛠️ 데이터 오류(KeyError) 자동 복구 기능 추가",
         "📌 상단 탭 고정 기능 추가 (스크롤 편의성)",
         "📝 운영 안내 내용 최신화",
         "🔰 운영 안내 탭 신설",
@@ -177,11 +178,13 @@ def update_lineup(df):
         ]
         sheet.append_row(headers)
         
+        # [수정] KeyError 방지를 위해 모든 컬럼 확인 후 생성
         if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
         if '입금' not in df.columns: df['입금'] = 'X'
         if '비고' not in df.columns: df['비고'] = ''
             
         final_cols = headers
+        # 없는 컬럼은 빈 값으로 채움
         for col in final_cols:
             if col not in df.columns: df[col] = ""
                 
@@ -379,13 +382,12 @@ st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layou
 # [CSS 스타일] 탭 고정 (Sticky Tabs)
 st.markdown("""
     <style>
-        /* 탭 컨테이너를 화면 상단에 고정 */
         div[data-testid="stTabsNav"] {
             position: sticky;
             top: 0;
             z-index: 999;
-            background-color: white; /* 배경색 지정 (투명 방지) */
-            padding-top: 1rem; /* 상단 여백 */
+            background-color: white;
+            padding-top: 1rem;
         }
     </style>
 """, unsafe_allow_html=True)
