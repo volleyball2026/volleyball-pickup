@@ -20,27 +20,21 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
+    "2025.01.03": [
+        "🔰 운영 안내 탭 신설",
+        "🕒 늦참 시간 입력 기능 추가",
+        "🎨 디자인 단순화 (이미지 제거)"
+    ],
     "2025.01.02": [
         "🔧 탭 튕김 현상 수정 (로그인 유지)",
         "📝 업데이트 로그 날짜별 정리",
         "🔽 레벨 선택지 간소화"
-    ],
-    "2025.01.01": [
-        "🔒 MVP 투표 보안 강화 (본인 인증)",
-        "👤 인증된 참가자 실명 표시",
-        "🛠️ 시스템 안정성 대폭 강화"
-    ],
-    "2024.12.31": [
-        "💰 입금 확인 기능 추가",
-        "📘 메뉴별 이용 가이드 추가",
-        "⚡ API 연결 최적화 (캐싱)"
     ]
 }
 
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
-# [수정] 레벨 선택지 간소화
 LEVELS = ["입문", "초급", "중급", "상급", "최상급"]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
@@ -146,13 +140,14 @@ def load_applicants():
     if sheet: return sheet.get_all_records()
     return []
 
-def add_applicant(name, phone, level, pos1, pos2, pos3):
+# [수정] 늦참 시간(note) 추가
+def add_applicant(name, phone, level, pos1, pos2, pos3, note):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         row_data = [
             name, normalize_phone(phone), level, pos1, pos2, pos3, 
             "", "", "", pos1, pos2, pos3, 
-            anonymize_name(name), "X"
+            anonymize_name(name), "X", note
         ]
         sheet.append_row(row_data)
         st.cache_data.clear()
@@ -176,15 +171,17 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
+        # [수정] 비고(늦참) 컬럼 추가
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
-            "이름(가림)", "입금"
+            "이름(가림)", "입금", "비고"
         ]
         sheet.append_row(headers)
         
         if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
         if '입금' not in df.columns: df['입금'] = 'X'
+        if '비고' not in df.columns: df['비고'] = ''
             
         final_cols = headers
         for col in final_cols:
@@ -200,7 +197,7 @@ def clear_applicants():
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
-            "이름(가림)", "입금"
+            "이름(가림)", "입금", "비고"
         ]
         sheet.append_row(headers)
         st.cache_data.clear()
@@ -383,7 +380,6 @@ st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layou
 
 with st.sidebar:
     st.header("📢 Update Log")
-    # [수정] 날짜별 로그 Expander 처리
     for date, logs in UPDATE_LOGS.items():
         with st.expander(date):
             for log in logs:
@@ -400,19 +396,41 @@ with st.sidebar:
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
+# [수정] 탭 추가 (운영 안내)
+tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🔰 운영 안내", "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
-# --- 탭 1: 참가 신청 ---
-with tab1:
-    with st.expander("📘 이용 가이드: 어떻게 신청하나요?", expanded=False):
-        st.markdown("""
-        1. **게임 정보 확인**: 상단에 표시된 일시, 장소, 참가비를 확인하세요.
-        2. **신청서 작성**: 이름, 연락처, 레벨, 희망 포지션을 입력하세요.
-        3. **신청하기**: 버튼을 누르면 신청이 완료되고 아래 명단에 추가됩니다.
-        """)
+# --- 탭 0: 운영 안내 (신설) ---
+with tab0:
+    st.header("즐겁게 배구하자! 월요배구회 🏐")
+    st.markdown("""
+    **여순광 픽업게임에 오신 것을 환영합니다!**
+    처음 오신 분들도, 매주 오시는 분들도 모두 즐겁게 운동할 수 있는 공간입니다.
+    
+    ### 📅 운동 정보
+    - **시간**: 매주 월요일 (공휴일 제외) **18:30 ~ 21:30**
+    - **장소**: (미정 - 추후 공지)
+    - **참가비**: 1회 5,000원 (변경 시 공지)
+    
+    ### 📝 진행 방법
+    1. **참가 신청**: 이 웹앱의 **[📢 참가 신청]** 탭에서 신청해주세요.
+        - **지각 시**: 신청서의 **'도착 예정 시간'** 칸에 시간을 꼭 적어주세요.
+    2. **경기 진행**: 12명 이상 모이면 경기를 진행합니다.
+    3. **성별**: 혼성 경기이며, 여성 게스트도 환영합니다! (18명 미만 시 여성은 수비 선수로 참가)
+    4. **팀 배정**: 실력 균형을 맞춘 **자동 라인업 시스템**을 사용합니다. (편애 NO!)
+    
+    ### ✨ 이 앱의 특별한 기능
+    - **⚡ 공정 라인업**: 알고리즘이 포지션과 레벨을 고려해 팀을 짜줍니다.
+    - **🏆 MVP 투표**: 운동 후 오늘의 MVP를 투표하고 '명예의 전당'에 이름을 올리세요!
+    - **🗣️ 소리함**: 하고 싶은 말이 있다면 익명으로 남겨주세요.
+    
+    ---
+    **문의사항은 오픈채팅방을 이용해주세요.**
+    """)
 
+# --- 탭 1: 참가 신청 (수정됨) ---
+with tab1:
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -436,7 +454,7 @@ with tab1:
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
                 
-                # [수정] 레벨 설명 가이드 & 선택지 간소화
+                # [수정] 레벨 & 늦참 시간 가로 배치
                 with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                     st.markdown("""
                     - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
@@ -445,7 +463,10 @@ with tab1:
                     - **상급**: 전국대회 상위 무대에서도 원활히 활동 가능
                     - **최상급**: 전국대회 최상위권, 선출 준하는 실력
                     """)
-                level = st.selectbox("참가자 레벨", LEVELS)
+                
+                lc1, lc2 = st.columns([2, 1])
+                with lc1: level = st.selectbox("참가자 레벨", LEVELS)
+                with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
                 
                 st.markdown("---")
                 p1, p2, p3 = st.columns(3)
@@ -457,7 +478,7 @@ with tab1:
                         is_black, reason = check_blacklist(name, phone)
                         if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
                         else:
-                            add_applicant(name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3)
+                            add_applicant(name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
                             st.success(f"{name}님 신청 완료!")
                     else: st.error("필수 입력 누락")
             
@@ -494,7 +515,10 @@ with tab1:
             if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
             if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
             
-            show_cols = ["이름", "상태", "레벨", "1순위", "2순위"]
+            # [수정] 비고(늦참) 컬럼 표시
+            if '비고' not in df_public.columns: df_public['비고'] = ""
+            
+            show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
             real_cols = [c for c in show_cols if c in df_public.columns]
             st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True)
         else: st.info("아직 신청자가 없습니다.")
@@ -593,10 +617,9 @@ with tab4:
     if not apps:
         st.warning("참가자 명단이 없어 투표할 수 없습니다.")
     else:
-        # [수정] st.empty를 사용해 화면 전환 (rerun 없이)
         auth_placeholder = st.empty()
         
-        # 로그인 안 된 상태일 때
+        # [상태 1] 인증 전
         if not st.session_state['mvp_voter_verified']:
             with auth_placeholder.form("mvp_auth"):
                 st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
@@ -614,7 +637,7 @@ with tab4:
                         st.session_state['mvp_voter_verified'] = True
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
-                        auth_placeholder.empty() # 폼 지우기
+                        auth_placeholder.empty()
                     else:
                         st.error("참가자 명단에 없는 정보입니다.")
             
@@ -622,7 +645,7 @@ with tab4:
                 st.divider()
                 st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
-        # 로그인 된 상태일 때 (else가 아님, 위에서 True로 바뀌면 바로 실행)
+        # [상태 2] 인증 후
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
@@ -642,7 +665,7 @@ with tab4:
             
             if st.button("로그아웃"):
                 st.session_state['mvp_voter_verified'] = False
-                st.rerun() # 로그아웃은 rerun 필요
+                st.rerun()
 
             st.divider()
             st.subheader("📊 실시간 득표 현황 (Top 5)")
@@ -675,7 +698,6 @@ with tab5:
 with tab6:
     st.header("⚡ 공정 라인업 생성")
     
-    # [수정] st.empty로 로그인 폼 처리
     lineup_auth = st.empty()
     
     if not st.session_state['lineup_admin_logged_in']:
@@ -719,7 +741,8 @@ with tab6:
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": st.write(f"- {p['assigned_pos']}: {p['이름']}")
             st.divider()
-            cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
+            # [수정] 비고 컬럼 추가
+            cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
                 final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
@@ -728,7 +751,6 @@ with tab6:
 with tab7:
     st.header("관리자 메뉴")
     
-    # [수정] st.empty로 로그인 폼 처리
     admin_auth = st.empty()
     
     if not st.session_state['admin_logged_in']:
@@ -805,9 +827,10 @@ with tab7:
         st.divider()
         with st.expander("🛠️ 라인업 비상 수정"):
             if apps:
-                cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
+                cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
                 df_final = pd.DataFrame(apps)
-                for c in cols_edit:
+                # 에러 방지
+                for c in cols_edit: 
                     if c not in df_final.columns: df_final[c] = ""
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
                 if st.button("비상 저장"):
