@@ -21,7 +21,6 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.02": [
-        "🎨 디자인 개편 (이미지 추가)",
         "🔧 탭 튕김 현상 수정 (로그인 유지)",
         "📝 업데이트 로그 날짜별 정리",
         "🔽 레벨 선택지 간소화"
@@ -41,6 +40,7 @@ UPDATE_LOGS = {
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
+# [수정] 레벨 선택지 간소화
 LEVELS = ["입문", "초급", "중급", "상급", "최상급"]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
@@ -378,14 +378,11 @@ def generate_fair_schedule(df):
         final_rounds[round_num] = (final_team_a, final_team_b)
     return final_rounds
 
-# --- [메인 화면 & 스타일] ---
+# --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# [이미지] 1. 사이드바 로고
 with st.sidebar:
-    st.image("images/logo.png", use_container_width=True)
     st.header("📢 Update Log")
-    
     # [수정] 날짜별 로그 Expander 처리
     for date, logs in UPDATE_LOGS.items():
         with st.expander(date):
@@ -400,9 +397,7 @@ with st.sidebar:
     else:
         st.error("❌ 서버 연결 실패")
 
-# [이미지] 2. 메인 배너
 st.title("🏐 여순광 배구 픽업게임 매니저")
-st.image("images/banner.png", use_container_width=True)
 current_game = get_current_game_info()
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -411,9 +406,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
-    # [이미지] 3. 참가 신청 이미지
-    st.image("images/apply.png", use_container_width=True)
-    
     with st.expander("📘 이용 가이드: 어떻게 신청하나요?", expanded=False):
         st.markdown("""
         1. **게임 정보 확인**: 상단에 표시된 일시, 장소, 참가비를 확인하세요.
@@ -510,9 +502,6 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    # [이미지] 4. 라인업 이미지
-    st.image("images/lineup.png", use_container_width=True)
-
     with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
         st.markdown("""
         - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
@@ -595,9 +584,6 @@ with tab3:
 
 # --- 탭 4: MVP ---
 with tab4:
-    # [이미지] 5. MVP 트로피 이미지
-    st.image("images/trophy.png", width=300)
-
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
         st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
 
@@ -607,9 +593,10 @@ with tab4:
     if not apps:
         st.warning("참가자 명단이 없어 투표할 수 없습니다.")
     else:
+        # [수정] st.empty를 사용해 화면 전환 (rerun 없이)
         auth_placeholder = st.empty()
         
-        # [상태 1] 인증 전
+        # 로그인 안 된 상태일 때
         if not st.session_state['mvp_voter_verified']:
             with auth_placeholder.form("mvp_auth"):
                 st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
@@ -627,7 +614,7 @@ with tab4:
                         st.session_state['mvp_voter_verified'] = True
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
-                        auth_placeholder.empty()
+                        auth_placeholder.empty() # 폼 지우기
                     else:
                         st.error("참가자 명단에 없는 정보입니다.")
             
@@ -635,7 +622,7 @@ with tab4:
                 st.divider()
                 st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
-        # [상태 2] 인증 후
+        # 로그인 된 상태일 때 (else가 아님, 위에서 True로 바뀌면 바로 실행)
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
@@ -655,7 +642,7 @@ with tab4:
             
             if st.button("로그아웃"):
                 st.session_state['mvp_voter_verified'] = False
-                st.rerun()
+                st.rerun() # 로그아웃은 rerun 필요
 
             st.divider()
             st.subheader("📊 실시간 득표 현황 (Top 5)")
@@ -688,6 +675,7 @@ with tab5:
 with tab6:
     st.header("⚡ 공정 라인업 생성")
     
+    # [수정] st.empty로 로그인 폼 처리
     lineup_auth = st.empty()
     
     if not st.session_state['lineup_admin_logged_in']:
@@ -740,6 +728,7 @@ with tab6:
 with tab7:
     st.header("관리자 메뉴")
     
+    # [수정] st.empty로 로그인 폼 처리
     admin_auth = st.empty()
     
     if not st.session_state['admin_logged_in']:
