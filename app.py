@@ -31,6 +31,18 @@ LEVELS = [
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
+# --- [세션 상태 초기화 (로그인 유지용)] ---
+if 'admin_logged_in' not in st.session_state:
+    st.session_state['admin_logged_in'] = False
+if 'lineup_admin_logged_in' not in st.session_state:
+    st.session_state['lineup_admin_logged_in'] = False
+if 'mvp_voter_verified' not in st.session_state:
+    st.session_state['mvp_voter_verified'] = False
+if 'mvp_voter_name' not in st.session_state:
+    st.session_state['mvp_voter_name'] = ""
+if 'mvp_voter_phone' not in st.session_state:
+    st.session_state['mvp_voter_phone'] = ""
+
 # --- [구글 시트 연결] ---
 @st.cache_resource
 def get_connection():
@@ -364,8 +376,8 @@ with st.sidebar:
     st.header("📢 Update Log")
     st.info("""
     **2025.12.31**
-    - 🔒 MVP 투표 보안 강화 (참가자 전용)
-    - 👤 인증된 참가자는 실명 투표 가능
+    - 🔒 로그인 유지 기능 추가 (탭 튕김 방지)
+    - ⚡ 탭 이동 시 초기화 문제 해결
     - 🛠️ 시스템 안정성 대폭 강화
     """)
     st.caption("문의: 운영진")
@@ -436,7 +448,8 @@ with tab1:
                         if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
                         else:
                             add_applicant(name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3)
-                            st.success(f"{name}님 신청 완료!"), st.rerun()
+                            st.success(f"{name}님 신청 완료!")
+                            # Rerun removed to prevent tab reset
                     else: st.error("필수 입력 누락")
             
             with st.expander("🗑️ 신청 취소"):
@@ -446,7 +459,7 @@ with tab1:
                     with cc2: c_phone = st.text_input("연락처")
                     if st.form_submit_button("취소하기"):
                         suc, msg = cancel_applicant(c_name, c_phone)
-                        if suc: st.success(msg), st.rerun()
+                        if suc: st.success(msg)
                         else: st.error(msg)
 
         st.divider()
@@ -560,7 +573,7 @@ with tab3:
                 else: 
                     st.info("기록 없음")
 
-# --- 탭 4: MVP (개선됨: 비공개 -> 실명) ---
+# --- 탭 4: MVP (수정됨: 탭 리셋 방지) ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
         st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
@@ -568,18 +581,10 @@ with tab4:
     st.header("🏆 MVP 투표")
     apps = load_applicants()
     
-    # 세션 상태 초기화
-    if 'mvp_voter_verified' not in st.session_state:
-        st.session_state['mvp_voter_verified'] = False
-    if 'mvp_voter_name' not in st.session_state:
-        st.session_state['mvp_voter_name'] = ""
-    if 'mvp_voter_phone' not in st.session_state:
-        st.session_state['mvp_voter_phone'] = ""
-
     if not apps:
         st.warning("참가자 명단이 없어 투표할 수 없습니다.")
     else:
-        # [상태 1] 인증 전: 로그인 폼 & 안내 메시지
+        # [상태 1] 인증 전
         if not st.session_state['mvp_voter_verified']:
             st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
             with st.form("mvp_auth"):
@@ -587,7 +592,6 @@ with tab4:
                 vphone = st.text_input("연락처")
                 if st.form_submit_button("확인"):
                     clean_vphone = normalize_phone(vphone)
-                    # 명단에서 확인
                     found = False
                     for p in apps:
                         if p['이름'] == voter and normalize_phone(p['연락처']) == clean_vphone:
@@ -598,39 +602,36 @@ with tab4:
                         st.session_state['mvp_voter_verified'] = True
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
-                        st.rerun()
+                        st.success("인증 성공! 아래 내용을 확인하세요.")
                     else:
-                        st.error("참가자 명단에 없는 정보입니다. (이름과 연락처를 확인해주세요)")
+                        st.error("참가자 명단에 없는 정보입니다.")
             
             st.divider()
             st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
-        # [상태 2] 인증 후: 투표(실명) & 랭킹(실명) & 명예의 전당 공개
+        # [상태 2] 인증 후 (Session State로 유지됨)
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
-            # 후보자 리스트 (실명 사용)
             df_mvp = pd.DataFrame(apps)
             candidate_list = df_mvp['이름'].tolist()
             
             with st.form("mvp_submit"):
                 target_name = st.selectbox("🏅 MVP 선택 (실명 표시)", candidate_list)
-                
                 if st.form_submit_button("투표하기"):
                     suc, msg = save_mvp_vote(
                         st.session_state['mvp_voter_name'], 
                         st.session_state['mvp_voter_phone'], 
                         target_name
                     )
-                    if suc:
-                        st.balloons()
-                        st.success(msg)
-                    else:
-                        st.error(msg)
+                    if suc: st.success(msg)
+                    else: st.error(msg)
             
             if st.button("로그아웃"):
                 st.session_state['mvp_voter_verified'] = False
-                st.rerun()
+                # 로그인 상태 해제 후 자연스럽게 UI 업데이트를 위해 rerun 없이 진행하거나
+                # 사용자가 탭을 누르면 반영됨. 여기서는 명시적 로그아웃을 위해 놔둠.
+                st.info("로그아웃 되었습니다. 탭을 다시 클릭하면 화면이 갱신됩니다.")
 
             st.divider()
             st.subheader("📊 실시간 득표 현황 (Top 5)")
@@ -659,11 +660,18 @@ with tab5:
                 else: st.error("전송 실패")
             else: st.warning("내용을 입력해주세요.")
 
-# --- 탭 6: 라인업 생성 (관리자) ---
+# --- 탭 6: 라인업 생성 (관리자 - 수정됨) ---
 with tab6:
     st.header("⚡ 공정 라인업 생성")
-    pw2 = st.text_input("비밀번호", type="password", key="pw2")
-    if pw2 == ADMIN_PASSWORD:
+    
+    # [로그인 유지 로직]
+    if not st.session_state['lineup_admin_logged_in']:
+        pw2 = st.text_input("비밀번호", type="password", key="pw2")
+        if pw2 == ADMIN_PASSWORD:
+            st.session_state['lineup_admin_logged_in'] = True
+            st.success("인증되었습니다.")
+    
+    if st.session_state['lineup_admin_logged_in']:
         data = load_applicants()
         if not data: st.warning("참가자 없음")
         else:
@@ -694,17 +702,23 @@ with tab6:
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": st.write(f"- {p['assigned_pos']}: {p['이름']}")
             st.divider()
-            # 14개 컬럼 에디터
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
                 final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
 
-# --- 탭 7: 관리자 ---
+# --- 탭 7: 관리자 (수정됨) ---
 with tab7:
     st.header("관리자 메뉴")
-    pw = st.text_input("비밀번호", type="password", key="pw1")
-    if pw == ADMIN_PASSWORD:
+    
+    # [로그인 유지 로직]
+    if not st.session_state['admin_logged_in']:
+        pw = st.text_input("비밀번호", type="password", key="pw1")
+        if pw == ADMIN_PASSWORD:
+            st.session_state['admin_logged_in'] = True
+            st.success("관리자 인증 성공")
+    
+    if st.session_state['admin_logged_in']:
         st.subheader("💰 입금 관리")
         apps = load_applicants()
         if apps:
@@ -724,7 +738,7 @@ with tab7:
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
-                st.success("저장되었습니다."), st.rerun()
+                st.success("저장되었습니다.")
         else: st.info("신청자 없음")
 
         st.divider()
@@ -747,7 +761,7 @@ with tab7:
                 info = {"제목": title, "일시": dt, "장소": loc, "성별": gender, "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, "마감일시": deadline_str}
                 save_game_info(info)
                 if reset_chk: archive_current_game(); clear_applicants()
-                st.success("게임이 개설되었습니다."), st.rerun()
+                st.success("게임이 개설되었습니다.")
         
         st.divider()
         st.subheader("🚨 블랙리스트")
@@ -774,7 +788,7 @@ with tab7:
                     if c not in df_final.columns: df_final[c] = ""
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
                 if st.button("비상 저장"):
-                    df_final.update(edited_final); update_lineup(df_final); st.success("완료"), st.rerun()
+                    df_final.update(edited_final); update_lineup(df_final); st.success("완료")
 
 st.markdown("---")
 st.markdown("<div style='text-align: center; color: gray; font-size: small;'>Designed by <b>Heeseong</b></div>", unsafe_allow_html=True)
