@@ -18,30 +18,39 @@ SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
 ADMIN_PASSWORD = "1992"
 
+# --- [업데이트 로그 데이터] ---
+UPDATE_LOGS = {
+    "2025.01.02": [
+        "🔧 탭 튕김 현상 수정 (로그인 유지)",
+        "📝 업데이트 로그 날짜별 정리",
+        "🔽 레벨 선택지 간소화"
+    ],
+    "2025.01.01": [
+        "🔒 MVP 투표 보안 강화 (본인 인증)",
+        "👤 인증된 참가자 실명 표시",
+        "🛠️ 시스템 안정성 대폭 강화"
+    ],
+    "2024.12.31": [
+        "💰 입금 확인 기능 추가",
+        "📘 메뉴별 이용 가이드 추가",
+        "⚡ API 연결 최적화 (캐싱)"
+    ]
+}
+
 # --- [데이터 리스트] ---
 POSITIONS_ALL = ["레프트", "속공", "세터", "라이트", "앞차", "백차", "레프트백", "센터백", "라이트백"]
 POSITIONS_3RD = ["레프트백", "센터백", "라이트백", "속공"]
-LEVELS = [
-    "입문 (Beginner) - 기본기 부족, 경기 어려움",
-    "초급 (Recreational) - 게임 경험 적음, 참여 가능",
-    "중급 (Intermediate) - 전국대회 출전 가능",
-    "상급 (Advanced) - 전국대회 상위 입상 가능",
-    "최상급 (Elite) - 선수 출신 준하는 실력"
-]
+# [수정] 레벨 선택지 간소화
+LEVELS = ["입문", "초급", "중급", "상급", "최상급"]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
-# --- [세션 상태 초기화 (로그인 유지용)] ---
-if 'admin_logged_in' not in st.session_state:
-    st.session_state['admin_logged_in'] = False
-if 'lineup_admin_logged_in' not in st.session_state:
-    st.session_state['lineup_admin_logged_in'] = False
-if 'mvp_voter_verified' not in st.session_state:
-    st.session_state['mvp_voter_verified'] = False
-if 'mvp_voter_name' not in st.session_state:
-    st.session_state['mvp_voter_name'] = ""
-if 'mvp_voter_phone' not in st.session_state:
-    st.session_state['mvp_voter_phone'] = ""
+# --- [세션 상태 초기화] ---
+if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
+if 'lineup_admin_logged_in' not in st.session_state: st.session_state['lineup_admin_logged_in'] = False
+if 'mvp_voter_verified' not in st.session_state: st.session_state['mvp_voter_verified'] = False
+if 'mvp_voter_name' not in st.session_state: st.session_state['mvp_voter_name'] = ""
+if 'mvp_voter_phone' not in st.session_state: st.session_state['mvp_voter_phone'] = ""
 
 # --- [구글 시트 연결] ---
 @st.cache_resource
@@ -374,19 +383,19 @@ st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layou
 
 with st.sidebar:
     st.header("📢 Update Log")
-    st.info("""
-    **2025.12.31**
-    - 🔒 로그인 유지 기능 추가 (탭 튕김 방지)
-    - ⚡ 탭 이동 시 초기화 문제 해결
-    - 🛠️ 시스템 안정성 대폭 강화
-    """)
-    st.caption("문의: 운영진")
+    # [수정] 날짜별 로그 Expander 처리
+    for date, logs in UPDATE_LOGS.items():
+        with st.expander(date):
+            for log in logs:
+                st.write(f"- {log}")
     
     st.divider()
+    st.caption("문의: 운영진")
+    
     if get_sheet_instance(SHEET_APPLICANTS):
-        st.success("✅ 구글 시트 연결됨")
+        st.success("✅ 서버 연결됨")
     else:
-        st.error("❌ 구글 시트 연결 실패")
+        st.error("❌ 서버 연결 실패")
 
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
@@ -427,6 +436,7 @@ with tab1:
                 with c1: name = st.text_input("이름")
                 with c2: phone = st.text_input("연락처", placeholder="01012345678")
                 
+                # [수정] 레벨 설명 가이드 & 선택지 간소화
                 with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                     st.markdown("""
                     - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
@@ -449,7 +459,6 @@ with tab1:
                         else:
                             add_applicant(name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3)
                             st.success(f"{name}님 신청 완료!")
-                            # Rerun removed to prevent tab reset
                     else: st.error("필수 입력 누락")
             
             with st.expander("🗑️ 신청 취소"):
@@ -573,7 +582,7 @@ with tab3:
                 else: 
                     st.info("기록 없음")
 
-# --- 탭 4: MVP (수정됨: 탭 리셋 방지) ---
+# --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
         st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
@@ -584,10 +593,13 @@ with tab4:
     if not apps:
         st.warning("참가자 명단이 없어 투표할 수 없습니다.")
     else:
-        # [상태 1] 인증 전
+        # [수정] st.empty를 사용해 화면 전환 (rerun 없이)
+        auth_placeholder = st.empty()
+        
+        # 로그인 안 된 상태일 때
         if not st.session_state['mvp_voter_verified']:
-            st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
-            with st.form("mvp_auth"):
+            with auth_placeholder.form("mvp_auth"):
+                st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
                 voter = st.text_input("이름")
                 vphone = st.text_input("연락처")
                 if st.form_submit_button("확인"):
@@ -602,14 +614,15 @@ with tab4:
                         st.session_state['mvp_voter_verified'] = True
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
-                        st.success("인증 성공! 아래 내용을 확인하세요.")
+                        auth_placeholder.empty() # 폼 지우기
                     else:
                         st.error("참가자 명단에 없는 정보입니다.")
             
-            st.divider()
-            st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
+            if not st.session_state['mvp_voter_verified']:
+                st.divider()
+                st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
-        # [상태 2] 인증 후 (Session State로 유지됨)
+        # 로그인 된 상태일 때 (else가 아님, 위에서 True로 바뀌면 바로 실행)
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
@@ -629,9 +642,7 @@ with tab4:
             
             if st.button("로그아웃"):
                 st.session_state['mvp_voter_verified'] = False
-                # 로그인 상태 해제 후 자연스럽게 UI 업데이트를 위해 rerun 없이 진행하거나
-                # 사용자가 탭을 누르면 반영됨. 여기서는 명시적 로그아웃을 위해 놔둠.
-                st.info("로그아웃 되었습니다. 탭을 다시 클릭하면 화면이 갱신됩니다.")
+                st.rerun() # 로그아웃은 rerun 필요
 
             st.divider()
             st.subheader("📊 실시간 득표 현황 (Top 5)")
@@ -660,16 +671,22 @@ with tab5:
                 else: st.error("전송 실패")
             else: st.warning("내용을 입력해주세요.")
 
-# --- 탭 6: 라인업 생성 (관리자 - 수정됨) ---
+# --- 탭 6: 라인업 생성 (관리자) ---
 with tab6:
     st.header("⚡ 공정 라인업 생성")
     
-    # [로그인 유지 로직]
+    # [수정] st.empty로 로그인 폼 처리
+    lineup_auth = st.empty()
+    
     if not st.session_state['lineup_admin_logged_in']:
-        pw2 = st.text_input("비밀번호", type="password", key="pw2")
-        if pw2 == ADMIN_PASSWORD:
-            st.session_state['lineup_admin_logged_in'] = True
-            st.success("인증되었습니다.")
+        with lineup_auth.form("lineup_login"):
+            pw2 = st.text_input("비밀번호", type="password")
+            if st.form_submit_button("확인"):
+                if pw2 == ADMIN_PASSWORD:
+                    st.session_state['lineup_admin_logged_in'] = True
+                    lineup_auth.empty()
+                else:
+                    st.error("비밀번호 불일치")
     
     if st.session_state['lineup_admin_logged_in']:
         data = load_applicants()
@@ -707,16 +724,22 @@ with tab6:
             if st.button("저장 (공개)"):
                 final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
 
-# --- 탭 7: 관리자 (수정됨) ---
+# --- 탭 7: 관리자 ---
 with tab7:
     st.header("관리자 메뉴")
     
-    # [로그인 유지 로직]
+    # [수정] st.empty로 로그인 폼 처리
+    admin_auth = st.empty()
+    
     if not st.session_state['admin_logged_in']:
-        pw = st.text_input("비밀번호", type="password", key="pw1")
-        if pw == ADMIN_PASSWORD:
-            st.session_state['admin_logged_in'] = True
-            st.success("관리자 인증 성공")
+        with admin_auth.form("admin_main_login"):
+            pw = st.text_input("비밀번호", type="password")
+            if st.form_submit_button("확인"):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state['admin_logged_in'] = True
+                    admin_auth.empty()
+                else:
+                    st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
         st.subheader("💰 입금 관리")
