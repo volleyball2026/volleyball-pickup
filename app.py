@@ -21,6 +21,7 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📢 포지션 선택 주의사항 문구 추가",
         "📅 정식 출범 일정(월/수/금) 안내 추가",
         "🔄 게임 개설 시 명단 자동 새로고침 적용",
         "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)",
@@ -503,6 +504,10 @@ with tab1:
                 with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
                 
                 st.markdown("---")
+                
+                # [수정] 포지션 선택 안내 문구 추가
+                st.info("📢 **주의:** 1순위 마감 시 2·3순위가 없으면 **임의 배정**되거나 **대기**로 밀릴 수 있습니다. (2·3순위 필수 아님, 권장)")
+                
                 p1, p2, p3 = st.columns(3)
                 with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
                 with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
@@ -661,7 +666,6 @@ with tab4:
                     clean_vphone = normalize_phone(vphone)
                     found = False
                     for p in apps:
-                        # VEGA 태그 고려
                         p_name_real = p['이름'].replace("[VEGA] ", "")
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
                             found = True
