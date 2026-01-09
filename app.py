@@ -21,10 +21,10 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "🔄 게임 개설 시 명단 자동 새로고침 적용",
         "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)",
         "✅ VEGA 회원 전용 체크박스 추가",
-        "📢 시범 운영(1~2월) 공지 추가",
-        "🛠️ 데이터 오류(KeyError) 자동 복구 기능 추가"
+        "📢 시범 운영(1~2월) 공지 추가"
     ]
 }
 
@@ -80,7 +80,6 @@ def normalize_phone(phone):
 
 def anonymize_name(name):
     if not isinstance(name, str): return str(name)
-    # [수정] VEGA 태그가 있는 경우 처리
     prefix = ""
     real_name = name
     if name.startswith("[VEGA]"):
@@ -349,12 +348,10 @@ def assign_positions_in_team(team_members, history, wait_history):
             if not allocated: p['assigned_pos'] = "대기"
     return team_members
 
-# [수정] VEGA 우선 배정 알고리즘
 def generate_vega_priority_schedule(df):
     players = df.to_dict('records')
     for p in players: p['score'] = calculate_score(p['레벨'])
     
-    # VEGA와 픽업 분류
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
@@ -363,23 +360,19 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 매 라운드 섞어주기
         random.shuffle(vegas)
         random.shuffle(pickups)
         
         team_size = len(players) // 2
         
-        # [A팀 구성] VEGA 우선 채우기 + 부족하면 픽업 충원
         team_a_cand = vegas[:team_size]
         if len(team_a_cand) < team_size:
             needed = team_size - len(team_a_cand)
             team_a_cand += pickups[:needed]
             team_b_cand = pickups[needed:]
         else:
-            # VEGA가 너무 많으면 남은 VEGA는 B팀으로
             team_b_cand = vegas[team_size:] + pickups
 
-        # 포지션 할당
         final_team_a = assign_positions_in_team(team_a_cand, history, wait_history)
         final_team_b = assign_positions_in_team(team_b_cand, history, wait_history)
         
@@ -395,7 +388,6 @@ def generate_vega_priority_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# [CSS 스타일] 탭 고정
 st.markdown("""
     <style>
         div[data-testid="stTabsNav"] {
@@ -503,7 +495,7 @@ with tab1:
                     - **최상급**: 전국대회 최상위권, 선출 준하는 실력
                     """)
                 
-                # [수정] VEGA 체크박스 추가
+                # VEGA 체크박스
                 is_vega = st.checkbox("순천VEGA 회원 (우선권)")
                 
                 lc1, lc2 = st.columns([2, 1])
@@ -520,7 +512,6 @@ with tab1:
                         is_black, reason = check_blacklist(name, phone)
                         if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
                         else:
-                            # [수정] VEGA 태그 붙여서 저장
                             final_name = f"[VEGA] {name}" if is_vega else name
                             add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
                             st.success(f"{name}님 신청 완료!")
@@ -532,7 +523,6 @@ with tab1:
                     with cc1: c_name = st.text_input("이름")
                     with cc2: c_phone = st.text_input("연락처")
                     if st.form_submit_button("취소하기"):
-                        # [수정] 이름 검색 시 태그 고려 (둘 다 시도)
                         suc, msg = cancel_applicant(c_name, c_phone)
                         if not suc:
                             suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
@@ -624,8 +614,6 @@ with tab3:
             if my_name and my_phone:
                 clean_phone = normalize_phone(my_phone)
                 cur_apps = load_applicants()
-                
-                # VEGA 태그 고려한 검색
                 my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
                 
                 st.subheader("📍 현재 신청 상태")
@@ -671,7 +659,6 @@ with tab4:
                     clean_vphone = normalize_phone(vphone)
                     found = False
                     for p in apps:
-                        # VEGA 태그 고려
                         p_name_real = p['이름'].replace("[VEGA] ", "")
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
                             found = True
@@ -759,7 +746,6 @@ with tab6:
         else:
             df = pd.DataFrame(data)
             
-            # [추가] 카카오톡 공유 텍스트 (관리자용)
             with st.expander("💬 카카오톡 공유 텍스트 생성 (클릭)"):
                 kakao_txt = generate_kakao_text(df)
                 st.code(kakao_txt, language="text")
@@ -860,6 +846,8 @@ with tab7:
                 save_game_info(info)
                 if reset_chk: archive_current_game(); clear_applicants()
                 st.success("게임이 개설되었습니다.")
+                time.sleep(1.5) # [수정] 성공 메시지 후 강제 새로고침 (명단 갱신)
+                st.rerun()
         
         st.divider()
         st.subheader("🚨 블랙리스트")
