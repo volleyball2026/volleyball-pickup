@@ -21,11 +21,10 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📢 시범 운영(1~2월) 공지 추가",
+        "🔒 카톡 공유 텍스트 관리자 전용으로 변경",
         "🛠️ 데이터 오류(KeyError) 자동 복구 기능 추가",
-        "📌 상단 탭 고정 기능 추가 (스크롤 편의성)",
-        "📝 운영 안내 내용 최신화",
-        "🔰 운영 안내 탭 신설",
-        "🕒 늦참 시간 입력 기능 추가"
+        "📌 상단 탭 고정 기능 추가"
     ],
     "2025.01.02": [
         "🔧 탭 튕김 현상 수정 (로그인 유지)",
@@ -178,13 +177,11 @@ def update_lineup(df):
         ]
         sheet.append_row(headers)
         
-        # [수정] KeyError 방지를 위해 모든 컬럼 확인 후 생성
         if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
         if '입금' not in df.columns: df['입금'] = 'X'
         if '비고' not in df.columns: df['비고'] = ''
             
         final_cols = headers
-        # 없는 컬럼은 빈 값으로 채움
         for col in final_cols:
             if col not in df.columns: df[col] = ""
                 
@@ -407,7 +404,7 @@ with st.sidebar:
     else:
         st.error("❌ 서버 연결 실패")
 
-st.title("여순광 배구 픽업게임 매니저")
+st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
 tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -416,10 +413,22 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 # --- 탭 0: 운영 안내 ---
 with tab0:
-    st.header("즐겁게 배구하자!")
+    st.header("즐겁게 배구하자! 월요배구회 🏐")
+    st.info("📢 **[중요] 1~2월 시범 운영 안내** (필독)")
     st.markdown("""
     **여순광 픽업게임에 오신 것을 환영합니다!**
-    처음 오신 분들도, 매주 오시는 분들도 모두 즐겁게 운동할 수 있는 공간입니다.
+    현재 체육관 섭외 및 대략적인 참여 인원을 파악하기 위해 **1~2월은 시범적으로 운영**됩니다.
+    3월 정식 오픈 전까지 아래 내용을 꼭 확인해주세요.
+    
+    ### 🤝 순천VEGA 팀과의 협력 운영
+    - **기간**: 1월 ~ 2월
+    - **방식**: 매주 목요일 **순천VEGA 배구클럽**의 운동 시간에 픽업게임을 함께 진행합니다.
+    - **우선권**: 체육관 대관 주체인 **순천VEGA 회원들에게 참가 신청 및 팀 편성 우선권**이 있습니다.
+    - **팀 구성**: VEGA 회원 위주로 팀을 구성한 후, 빈 자리나 상대 팀으로 픽업 참가자가 배정되어 함께 연습 경기를 진행합니다.
+    
+    > 🙏 **양해 말씀**: 아직 정식 오픈 전 단계라 운영에 미흡한 점이 있을 수 있습니다. 배구를 사랑하는 마음으로 함께 즐겨주시면 감사하겠습니다.
+    
+    ---
     
     ### 📅 운동 정보
     - **시간**: 매주 목요일 (공휴일 제외) **18:30 ~ 21:30**
@@ -436,13 +445,9 @@ with tab0:
     3. **성별**: **남성 경기**이며, 남성 18명 미만 시 여성은 **수비 선수로만** 참가 가능합니다.
     4. **팀 배정**: 실력 균형을 맞춘 **자동 라인업 시스템**을 사용합니다. (편애 NO!)
     
-    ### ✨ 이 앱의 특별한 기능
-    - **⚡ 공정 라인업**: 알고리즘이 포지션과 레벨을 고려해 팀을 짜줍니다.
-    - **🏆 MVP 투표**: 운동 후 오늘의 MVP를 투표하고 '명예의 전당'에 이름을 올리세요!
-    - **🗣️ 소리함**: 하고 싶은 말이 있다면 익명으로 남겨주세요.
-    
     ---
-    **문의사항은 오픈채팅방을 이용해주세요.**
+    **💬 문의사항은 오픈채팅방을 이용해주세요.**
+    [👉 여순광 배구 픽업 오픈채팅방 입장하기](https://open.kakao.com/o/gf1s6t9h)
     """)
 
 # --- 탭 1: 참가 신청 ---
@@ -544,7 +549,6 @@ with tab2:
         st.markdown("""
         - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
         - **포지션 아이콘**: ✅(1순위 배정), ⚠️(2/3순위 배정)
-        - **공유하기**: 아래 텍스트 상자를 펼쳐 카톡방에 공유할 수 있습니다.
         """)
 
     st.header("📋 이번 주 라인업")
@@ -553,10 +557,7 @@ with tab2:
     else:
         df_final = pd.DataFrame(data_final)
         
-        with st.expander("💬 카카오톡 공유 텍스트 보기 (클릭)"):
-            kakao_txt = generate_kakao_text(df_final)
-            st.code(kakao_txt, language="text")
-            st.caption("👆 오른쪽 위 복사 버튼을 눌러 단톡방에 붙여넣으세요.")
+        # [삭제] 카톡 공유 텍스트는 관리자 탭으로 이동됨
         
         st.divider()
 
@@ -633,7 +634,6 @@ with tab4:
     else:
         auth_placeholder = st.empty()
         
-        # [상태 1] 인증 전
         if not st.session_state['mvp_voter_verified']:
             with auth_placeholder.form("mvp_auth"):
                 st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
@@ -659,7 +659,6 @@ with tab4:
                 st.divider()
                 st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
-        # [상태 2] 인증 후
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
@@ -729,6 +728,14 @@ with tab6:
         if not data: st.warning("참가자 없음")
         else:
             df = pd.DataFrame(data)
+            
+            # [추가] 카카오톡 공유 텍스트 (관리자용)
+            with st.expander("💬 카카오톡 공유 텍스트 생성 (클릭)"):
+                kakao_txt = generate_kakao_text(df)
+                st.code(kakao_txt, language="text")
+                st.caption("👆 오른쪽 위 복사 버튼을 눌러 단톡방에 공유하세요.")
+            st.divider()
+
             if st.button("🎲 계산 시작"):
                 with st.spinner("계산 중..."): st.session_state['fair_results'] = generate_fair_schedule(df); st.success("완료!")
             if 'fair_results' in st.session_state:
