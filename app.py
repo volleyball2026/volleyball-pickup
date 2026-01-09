@@ -21,10 +21,10 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📅 정식 출범 일정(월/수/금) 안내 추가",
         "🔄 게임 개설 시 명단 자동 새로고침 적용",
         "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)",
-        "✅ VEGA 회원 전용 체크박스 추가",
-        "📢 시범 운영(1~2월) 공지 추가"
+        "✅ VEGA 회원 전용 체크박스 추가"
     ]
 }
 
@@ -424,6 +424,7 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 # --- 탭 0: 운영 안내 ---
 with tab0:
+    st.header("즐겁게 배구하자! 월요배구회 🏐")
     st.info("📢 **[중요] 1~2월 시범 운영 안내** (필독)")
     st.markdown("""
     **여순광 픽업게임에 오신 것을 환영합니다!**
@@ -442,6 +443,7 @@ with tab0:
     
     ### 📅 운동 정보
     - **시간**: 매주 목요일 (공휴일 제외) **18:30 ~ 21:30**
+        - *※ 1~2월은 시범 운영이라 부득이하게 목요일에 진행하지만, 3월 정식 출범 이후에는 주요 클럽들의 운동 시간과 겹치지 않도록 **월·수·금요일 중**으로 추진할 예정입니다.*
         - 18:30 ~ 19:00: 몸풀기
         - 19:00 ~ 19:20: 공격 및 서브 연습
         - 19:20 ~ 21:30: 경기 진행
@@ -613,6 +615,8 @@ with tab3:
             if my_name and my_phone:
                 clean_phone = normalize_phone(my_phone)
                 cur_apps = load_applicants()
+                
+                # VEGA 태그 고려한 검색
                 my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
                 
                 st.subheader("📍 현재 신청 상태")
@@ -658,6 +662,7 @@ with tab4:
                     clean_vphone = normalize_phone(vphone)
                     found = False
                     for p in apps:
+                        # VEGA 태그 고려
                         p_name_real = p['이름'].replace("[VEGA] ", "")
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
                             found = True
@@ -845,7 +850,7 @@ with tab7:
                 save_game_info(info)
                 if reset_chk: archive_current_game(); clear_applicants()
                 st.success("게임이 개설되었습니다.")
-                time.sleep(1.5) # [수정] 성공 메시지 후 강제 새로고침 (명단 갱신)
+                time.sleep(1.5)
                 st.rerun()
         
         st.divider()
