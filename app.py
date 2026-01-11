@@ -336,29 +336,28 @@ def get_priority_score(player, last_result_map):
     last_res = last_result_map.get(name)
     
     if last_res == 'wait':
-        score += 500  # 0티어: 대기하셨던 분 (최우선)
-        
+        score += 500  # 0티어: 대기하셨던 분
     elif last_res == '3rd':
-        score += 300  # 1티어: 3순위까지 밀려서 희생하신 분 (보상 강화)
-        
+        score += 300  # 1티어: 3순위까지 밀려서 희생하신 분
     elif last_res == '2nd':
         score += 200  # 2티어: 2순위로 양보하신 분
-        
     elif last_res == 'random':
-        score += 200  # 2티어: 무작위 배정 (2순위와 동급 점수 부여)
-        # [핵심] 무작위 점수를 2순위와 같게 낮춰서, 
-        # 일부러 2~3순위를 안 적고 무작위를 노리는 꼼수를 차단함.
-        # (비워봤자 점수 이득 없고 이상한 포지션 걸릴 위험만 큼)
-
+        score += 200  # 2티어: 무작위 배정 (꼼수 방지용)
     elif last_res == '1st':
-        score -= 500  # 4티어: 1순위 하신 분 (확실한 양보)
+        score -= 500  # 4티어: 1순위 하신 분
         
-    # 3. 미세 랜덤 (점수가 같을 때 로테이션 돌리기 위함)
+    # 3. 미세 랜덤
     score += random.random()
     
     return score
 
 def assign_positions_in_team(team_members, last_pos_map):
+    # [수정] 0. 필수 변수 초기화 (에러 해결!)
+    for p in team_members:
+        p['assigned_pos'] = None
+        p['match_type'] = None
+        p['got_1st'] = False
+
     # 1. 팀원 줄 세우기
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
@@ -393,7 +392,7 @@ def assign_positions_in_team(team_members, last_pos_map):
         pos = p['1순위']
         name = p['이름']
         
-        # [조건부 양보] 직전에 했고 + 경쟁 있으면 -> 탈락
+        # [조건부 양보]
         played_last = (last_pos_map.get(name) == pos)
         is_contested = demand_counts.get(pos, 0) > max_quotas.get(pos, 0)
         
@@ -485,7 +484,6 @@ def generate_vega_priority_schedule(df):
             candidates = [p for p in pool if p['1순위'] in missing_pos]
             
             if candidates:
-                # 점수 높은(우선권 있는) 사람이 A팀으로 스카우트됨
                 candidates.sort(key=lambda x: x['priority_score'], reverse=True)
                 best = candidates[0]
             else:
@@ -509,17 +507,17 @@ def generate_vega_priority_schedule(df):
         
         for p in final_team_a + final_team_b:
             name = p['이름']
-            last_result_map[name] = p.get('match_type') # 결과 등급 저장
+            last_result_map[name] = p.get('match_type')
             
             if p.get('match_type') == '1st':
-                new_last_pos_map[name] = p['assigned_pos'] # 포지션 저장
+                new_last_pos_map[name] = p['assigned_pos']
             
         last_pos_map = new_last_pos_map
             
         final_rounds[round_num] = (final_team_a, final_team_b)
         
     return final_rounds
-
+    
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
