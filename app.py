@@ -21,11 +21,11 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)",
         "📢 포지션 선택 주의사항 문구 추가",
         "📅 정식 출범 일정(월/수/금) 안내 추가",
         "🔄 게임 개설 시 명단 자동 새로고침 적용",
-        "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)",
-        "✅ VEGA 회원 전용 체크박스 추가"
+        "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)"
     ]
 }
 
@@ -425,6 +425,7 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 # --- 탭 0: 운영 안내 ---
 with tab0:
+    st.header("즐겁게 배구하자! 월요배구회 🏐")
     st.info("📢 **[중요] 1~2월 시범 운영 안내** (필독)")
     st.markdown("""
     **여순광 픽업게임에 오신 것을 환영합니다!**
@@ -547,8 +548,13 @@ with tab1:
                 cols = st.columns(4)
                 for idx, (pos, count) in enumerate(counts.items()):
                     with cols[idx % 4]:
-                        if count > MAX_SLOTS: st.metric(label=pos, value=f"{count}명", delta="초과!", delta_color="inverse")
-                        else: st.metric(label=pos, value=f"{count}명", delta="여유")
+                        # [수정] 경쟁률 표시 로직
+                        if count > MAX_SLOTS: 
+                            st.metric(label=pos, value=f"{count}명", delta="초과!", delta_color="inverse")
+                        elif count == MAX_SLOTS:
+                            st.metric(label=pos, value=f"{count}명", delta="마감 임박", delta_color="off")
+                        else: 
+                            st.metric(label=pos, value=f"{count}명", delta="여유")
             
             st.divider()
             st.markdown("##### 📋 신청자 명단")
