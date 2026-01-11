@@ -315,38 +315,86 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
+# [수정] 인원수에 따른 포지션 자동 조정 기능 추가
 def assign_positions_in_team(team_members, history, wait_history):
+    # 1. 우선순위 점수 계산 (기존 로직)
     for p in team_members:
         name = p['이름']
         played_1st = history.get(name, 0)
         waited = wait_history.get(name, 0)
         p['priority_score'] = (10 - played_1st) + (waited * 5) + random.random()
         p['assigned_pos'] = None 
-    team_members.sort(key=lambda x: x['priority_score'], reverse=True)
-    current_quotas = POSITION_QUOTAS.copy()
     
+    # 점수 높은 순 정렬
+    team_members.sort(key=lambda x: x['priority_score'], reverse=True)
+    
+    # 2. [NEW] 팀 인원수에 따른 포지션 쿼터 조정
+    team_size = len(team_members)
+    current_quotas = POSITION_QUOTAS.copy() # 기본 9인제 쿼터 가져오기
+    
+    if team_size == 8:
+        # 8인제: 속공 vs 센터백 중 희망자가 적은 포지션 제거
+        cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
+        cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
+        
+        if cnt_fast >= cnt_cb:
+            current_quotas['센터백'] = 0 # 속공이 더 많거나 같으면 -> 센터백 제거
+        else:
+            current_quotas['속공'] = 0   # 센터백이 더 많으면 -> 속공 제거
+            
+    elif team_size == 7:
+        # 7인제: 속공, 센터백 제거
+        current_quotas['속공'] = 0
+        current_quotas['센터백'] = 0
+        
+    elif team_size == 6:
+        # 6인제: 속공, 센터백, 백차 제거
+        current_quotas['속공'] = 0
+        current_quotas['센터백'] = 0
+        current_quotas['백차'] = 0
+    
+    # (9명 이상이거나 5명 이하인 경우는 기본 쿼터 유지하거나 남는 자리 대기 처리됨)
+
+    # 3. 포지션 배정 (수정된 쿼터 적용)
+    # (1) 1순위 배정
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
-            p['assigned_pos'] = pos1; current_quotas[pos1] -= 1; p['got_1st'] = True
-        else: p['got_1st'] = False
+            p['assigned_pos'] = pos1
+            current_quotas[pos1] -= 1
+            p['got_1st'] = True
+        else:
+            p['got_1st'] = False
+            
+    # (2) 2순위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
             pos2 = p['2순위']
             if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
-                p['assigned_pos'] = pos2; current_quotas[pos2] -= 1
+                p['assigned_pos'] = pos2
+                current_quotas[pos2] -= 1
+                
+    # (3) 3순위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
             pos3 = p['3순위']
             if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
-                p['assigned_pos'] = pos3; current_quotas[pos3] -= 1
+                p['assigned_pos'] = pos3
+                current_quotas[pos3] -= 1
+                
+    # (4) 남은 자리 임의 배정 (빈 포지션 채우기)
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
             for pos, count in current_quotas.items():
                 if count > 0:
-                    p['assigned_pos'] = pos; current_quotas[pos] -= 1; allocated = True; break
-            if not allocated: p['assigned_pos'] = "대기"
+                    p['assigned_pos'] = pos
+                    current_quotas[pos] -= 1
+                    allocated = True
+                    break
+            if not allocated:
+                p['assigned_pos'] = "대기" # 모든 포지션이 꽉 찼을 때
+                
     return team_members
 
 def generate_vega_priority_schedule(df):
