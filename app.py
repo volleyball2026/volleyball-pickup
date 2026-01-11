@@ -323,46 +323,47 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (한풀이 로직 적용)
+# [NEW] 우선순위 점수 계산기 (강력한 순환 로직)
 def get_priority_score(player, history, fail_history, wait_history):
     name = player['이름']
     
     # 1. 기본 점수
-    score = 100.0
+    score = 1000.0
     
-    # 2. VEGA 절대 우대 (10000점 - 넘을 수 없는 벽)
+    # 2. VEGA 절대 우대 (100000점 - 넘사벽)
     if "[VEGA]" in name:
-        score += 10000
+        score += 100000
         
-    # 3. [핵심] 한풀이 보너스 (지난번에 1순위 못한 경우)
-    # 실패 1회당 +20점 (엄청난 가산점)
-    fails = fail_history.get(name, 0)
-    score += (fails * 20)
-    
-    # 4. [핵심] 성공 페널티 (이미 1순위 해본 경우)
-    # 성공 1회당 -10점
+    # 3. [핵심] 성공 페널티 (1순위 해봤으면 비켜라)
+    # 한 번 성공할 때마다 -500점 (즉시 꼴찌로 추락)
     played = history.get(name, 0)
-    score -= (played * 10)
+    score -= (played * 500)
+    
+    # 4. [핵심] 한풀이 보너스 (못 해봤으면 비켜줄게)
+    # 한 번 실패할 때마다 +200점 (무조건 상위권 진입)
+    fails = fail_history.get(name, 0)
+    score += (fails * 200)
     
     # 5. 대기 보너스
     waits = wait_history.get(name, 0)
-    score += (waits * 50) # 대기했다면 무조건 다음엔 1순위급
+    score += (waits * 50) 
     
-    # 6. 미세 랜덤 (동점자 방지)
+    # 6. 랜덤 (동점자 처리용)
     score += random.random()
     
     return score
 
 def assign_positions_in_team(team_members, history, fail_history, wait_history):
-    # 1. 모든 팀원의 우선순위 점수 계산
+    # 1. 점수 계산
     for p in team_members:
         p['priority_score'] = get_priority_score(p, history, fail_history, wait_history)
-        p['assigned_pos'] = None 
+        p['assigned_pos'] = None
+        p['match_type'] = None # 배정 타입 (1st, 2nd, 3rd, random)
     
-    # 2. 점수 높은 순 정렬 (한풀이 점수 높은 사람이 맨 위로)
+    # 2. 점수 높은 순 정렬 (이 순서대로 우선권을 가짐)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
-    # 3. 팀 인원수에 따른 쿼터 조정
+    # 3. 쿼터 설정
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
     
@@ -379,52 +380,59 @@ def assign_positions_in_team(team_members, history, fail_history, wait_history):
         current_quotas['센터백'] = 0
         current_quotas['백차'] = 0
     
-    # 4. 포지션 배정 실행
-    # (1) 1순위 배정
+    # 4. [단계별 배정]
+    
+    # (Step 1) 1순위 희망자 배정
     for p in team_members:
-        pos1 = p['1순위']
-        if current_quotas.get(pos1, 0) > 0:
-            p['assigned_pos'] = pos1
-            current_quotas[pos1] -= 1
-            p['got_1st'] = True # 성공!
-        else:
-            p['got_1st'] = False # 실패... (다음 판에 가산점 예약)
+        pos = p['1순위']
+        if current_quotas.get(pos, 0) > 0:
+            p['assigned_pos'] = pos
+            current_quotas[pos] -= 1
+            p['match_type'] = '1st'
             
-    # (2) 2순위
+    # (Step 2) 2순위 배정 (아직 배정 안 된 사람 대상)
     for p in team_members:
         if p['assigned_pos'] is None:
-            pos2 = p['2순위']
-            if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
-                p['assigned_pos'] = pos2; current_quotas[pos2] -= 1
-                
-    # (3) 3순위
+            pos = p['2순위']
+            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                p['assigned_pos'] = pos
+                current_quotas[pos] -= 1
+                p['match_type'] = '2nd'
+
+    # (Step 3) 3순위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
-            pos3 = p['3순위']
-            if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
-                p['assigned_pos'] = pos3; current_quotas[pos3] -= 1
+            pos = p['3순위']
+            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                p['assigned_pos'] = pos
+                current_quotas[pos] -= 1
+                p['match_type'] = '3rd'
                 
-    # (4) 나머지 임의 배정
+    # (Step 4) 남은 자리 무작위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
             for pos, count in current_quotas.items():
                 if count > 0:
-                    p['assigned_pos'] = pos; current_quotas[pos] -= 1; allocated = True; break
-            if not allocated: p['assigned_pos'] = "대기"
+                    p['assigned_pos'] = pos
+                    current_quotas[pos] -= 1
+                    p['match_type'] = 'random'
+                    allocated = True
+                    break
+            if not allocated: 
+                p['assigned_pos'] = "대기"
+                p['match_type'] = 'wait'
                 
     return team_members
 
 def generate_vega_priority_schedule(df):
     players = df.to_dict('records')
-    for p in players: p['score'] = calculate_score(p['레벨'])
-    
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
     # 기록 초기화
     history = {p['이름']: 0 for p in players}      # 1순위 성공 횟수
-    fail_history = {p['이름']: 0 for p in players} # 1순위 실패 횟수 (한풀이용)
+    fail_history = {p['이름']: 0 for p in players} # 1순위 실패 횟수
     wait_history = {p['이름']: 0 for p in players} # 대기 횟수
     
     final_rounds = {}
@@ -435,25 +443,24 @@ def generate_vega_priority_schedule(df):
         
         team_size = len(players) // 2
         
-        # 유효 포지션 계산
         valid_positions = set(POSITIONS_ALL)
         if team_size == 7: valid_positions -= {'속공', '센터백'}
         elif team_size == 6: valid_positions -= {'속공', '센터백', '백차'}
         
-        # --- [팀 구성 단계] ---
-        
-        # 1. 모든 참가자의 현재 우선순위 점수 미리 계산
-        # (이 점수를 기반으로 스카우트함 -> 억울한 사람을 먼저 데려가기 위함)
+        # --- [팀 구성: A팀 부족 포지션 채우기] ---
         for p in vegas + pickups:
             p['current_round_score'] = get_priority_score(p, history, fail_history, wait_history)
         
-        # VEGA 먼저 배치
+        # 점수 높은 순 정렬 (VEGA 상위권)
         vegas.sort(key=lambda x: x['current_round_score'], reverse=True)
+        pickups.sort(key=lambda x: x['current_round_score'], reverse=True)
+        
         team_a = vegas[:team_size]
         rem_vegas = vegas[team_size:]
         
-        # A팀 빈자리 채우기 (스마트 스카우트 v3 - 한풀이 점수 반영)
         slots_needed = team_size - len(team_a)
+        
+        # A팀 스카우트 (이번 라운드 점수가 높은 픽업 멤버 우선)
         pool = pickups[:]
         selected_for_a = []
         current_positions = [p['1순위'] for p in team_a]
@@ -461,15 +468,13 @@ def generate_vega_priority_schedule(df):
         for _ in range(slots_needed):
             missing_pos = list(valid_positions - set(current_positions))
             
-            # (1) A팀에 없는 포지션 희망자 중 "점수 높은(억울한)" 사람 찾기
+            # (1) A팀에 없는 포지션을 1순위로 원하면서 + 점수가 높은 사람
             candidates = [p for p in pool if p['1순위'] in missing_pos]
             
             if candidates:
-                # 점수 높은 순 정렬 (많이 밀렸던 사람 우선)
                 candidates.sort(key=lambda x: x['current_round_score'], reverse=True)
                 best = candidates[0]
             else:
-                # 딱 맞는 사람 없으면 그냥 점수 제일 높은 사람
                 pool.sort(key=lambda x: x['current_round_score'], reverse=True)
                 best = pool[0] if pool else None
             
@@ -481,19 +486,21 @@ def generate_vega_priority_schedule(df):
         team_a += selected_for_a
         team_b = rem_vegas + pool
         
-        # --- [포지션 배정 단계] ---
+        # --- [포지션 배정] ---
         final_team_a = assign_positions_in_team(team_a, history, fail_history, wait_history)
         final_team_b = assign_positions_in_team(team_b, history, fail_history, wait_history)
         
         # --- [기록 업데이트] ---
         for p in final_team_a + final_team_b:
             name = p['이름']
-            if p['assigned_pos'] == "대기":
+            match = p.get('match_type')
+            
+            if match == 'wait':
                 wait_history[name] += 1
-            elif p.get('got_1st', False):
-                history[name] += 1 # 성공 횟수 증가 (다음판 감점)
+            elif match == '1st':
+                history[name] += 1       # 성공! 다음 판 감점 (-500)
             else:
-                fail_history[name] += 1 # 실패 횟수 증가 (다음판 가산점)
+                fail_history[name] += 1  # 2,3순위나 랜덤 -> 실패! 다음 판 가산점 (+200)
             
         final_rounds[round_num] = (final_team_a, final_team_b)
         
@@ -700,7 +707,7 @@ with tab2:
     with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
         st.markdown("""
         - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
-        - **포지션 아이콘**: ✅(1순위 배정), ⚠️(2/3순위 배정)
+        - **아이콘**: 1️⃣(1순위), 2️⃣(2순위), 3️⃣(3순위), 🎲(무작위)
         """)
 
     st.header("📋 이번 주 라인업")
@@ -717,41 +724,41 @@ with tab2:
                 if col_pos in df_final.columns:
                     playing = df_final[df_final[col_pos] != '']
                     if not playing.empty:
-                        # [추가] 경기 방식 및 제외 포지션 안내 기능
+                        # 경기 정보 표시
                         real_players = playing[playing[col_pos] != "대기"]
                         if not real_players.empty:
                             count_a = len(real_players[real_players[col_team]=="A팀"])
                             count_b = len(real_players[real_players[col_team]=="B팀"])
-                            
-                            # 현재 배정된 포지션 확인
                             assigned_set = set(real_players[col_pos].unique())
                             full_set = set(POSITIONS_ALL)
-                            # 전체 포지션 중 배정되지 않은 포지션 찾기
                             missing = list(full_set - assigned_set)
-                            
                             info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
-                            if missing:
-                                info_msg += f" (제외 포지션: {', '.join(missing)})"
-                            else:
-                                info_msg += " (풀 포지션)"
-                            
+                            if missing: info_msg += f" (제외: {', '.join(missing)})"
                             st.info(info_msg)
+
+                        # 아이콘 결정 함수
+                        def get_icon(row, pos_col):
+                            current = row[pos_col]
+                            if current == row['1순위']: return "1️⃣"
+                            elif current == row['2순위']: return "2️⃣"
+                            elif current == row['3순위']: return "3️⃣"
+                            else: return "🎲"
 
                         c1, c2 = st.columns(2)
                         with c1:
                             st.error("🔴 A팀 (VEGA)")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
-                                icon = "✅" if r[col_pos]==r['1순위'] else "⚠️"
+                                icon = get_icon(r, col_pos)
                                 st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
                         with c2:
                             st.info("🔵 B팀 (픽업)")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
-                                icon = "✅" if r[col_pos]==r['1순위'] else "⚠️"
+                                icon = get_icon(r, col_pos)
                                 st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
                         st.markdown("---")
                         bench = playing[playing[col_pos]=="대기"]
                         if not bench.empty:
-                            st.caption(f"🛌 **대기 ({'다음 0순위' if i<3 else '수고하셨습니다'})**")
+                            st.caption(f"🛌 **대기**")
                             for _, r in bench.iterrows(): st.write(f"- {r['이름_masked']} (희망: {r['1순위']})")
 
 # --- 탭 3: My Page ---
@@ -932,25 +939,31 @@ with tab6:
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
+                
                 # 화면 표시
                 r_tabs = st.tabs(["1·2", "3·4", "5·6"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # [추가] 관리자용 경기 정보 (제외 포지션 확인)
+                        # 아이콘 헬퍼 함수
+                        def get_admin_icon(p):
+                            m = p.get('match_type')
+                            if m == '1st': return "1️⃣"
+                            elif m == '2nd': return "2️⃣"
+                            elif m == '3rd': return "3️⃣"
+                            else: return "🎲"
+
+                        # 경기 정보 안내
                         real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
                         if real_players:
                             count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                             count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
-                            
                             assigned_set = set(p['assigned_pos'] for p in real_players)
                             full_set = set(POSITIONS_ALL)
                             missing = list(full_set - assigned_set)
-                            
                             info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**"
                             if missing: info_msg += f" (제외: {', '.join(missing)})"
-                            else: info_msg += " (풀 포지션)"
                             st.info(info_msg)
 
                         c1, c2 = st.columns(2)
@@ -958,23 +971,21 @@ with tab6:
                             st.error("🔴 A팀 (VEGA)")
                             for p in team_a: 
                                 if p['assigned_pos']!="대기":
-                                    # 아이콘 로직 적용
-                                    icon = "✅" if p['assigned_pos'] == p['1순위'] else "⚠️"
+                                    icon = get_admin_icon(p)
                                     st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
                         with c2: 
                             st.info("🔵 B팀 (픽업)")
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": 
-                                    # 아이콘 로직 적용
-                                    icon = "✅" if p['assigned_pos'] == p['1순위'] else "⚠️"
+                                    icon = get_admin_icon(p)
                                     st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
                         
-                        # 대기 인원 표시
+                        # 대기 인원
                         st.markdown("---")
                         bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
                         bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
                         if bench_a or bench_b:
-                            st.caption("🛌 대기 (다음 우선권 부여)")
+                            st.caption("🛌 대기")
                             for p in bench_a + bench_b:
                                 st.write(f"- {p['이름']} (희망: {p['1순위']})")
 
