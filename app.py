@@ -465,7 +465,13 @@ with st.sidebar:
                 st.write(f"- {log}")
     
     st.divider()
-    st.caption("문의: 운영진")
+    
+    # [수정] 문의하기 섹션 (링크 적용)
+    st.markdown("### 📞 문의하기")
+    # 아래 링크를 클릭하면 새 창으로 오픈채팅방이 열립니다.
+    st.markdown("💬 [**오픈채팅방 입장 (클릭)**](https://open.kakao.com/o/gf1s6t9h)")
+    # 소리함 탭 이동 기능은 Streamlit 미지원이므로 안내 문구로 대체
+    st.caption("🗣️ **소리함**: 우측 상단 '소리함' 탭을 이용해주세요.")
     
     if get_sheet_instance(SHEET_APPLICANTS):
         st.success("✅ 서버 연결됨")
