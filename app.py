@@ -369,8 +369,8 @@ def assign_positions_in_team(team_members, last_pos_map):
     current_quotas = POSITION_QUOTAS.copy()
     
     if team_size == 8:
-        cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
-        cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
+        cnt_fast = sum(1 for p in team_members if '속공' in str(p['1순위']))
+        cnt_cb = sum(1 for p in team_members if '센터백' in str(p['1순위']))
         if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
         else: current_quotas['속공'] = 0
     elif team_size == 7:
@@ -383,15 +383,11 @@ def assign_positions_in_team(team_members, last_pos_map):
     # (Step 1) 1순위 배정
     for p in team_members:
         pos = str(p['1순위']).strip()
-        name = p['이름']
         
-        # [강제 차단 확인]
-        last = last_pos_map.get(name)
-        if last: last = str(last).strip()
-        
-        if last == pos:
+        # [🚨 핵심 수정] 점수 폭격 맞은 사람(-50만 점 이하)은 
+        # 자리가 있어도 1순위 배정을 강제로 건너뜀!
+        if p['priority_score'] < -500000:
             p['got_1st'] = False
-            # st.write(f"❌ {name} 1순위 {pos} 배정 거부 (연속)")
             continue
 
         if current_quotas.get(pos, 0) > 0:
@@ -406,18 +402,20 @@ def assign_positions_in_team(team_members, last_pos_map):
     for p in team_members:
         if p['assigned_pos'] is None:
             pos = p['2순위']
-            if pos and pos != "선택 안함" and current_quotas.get(str(pos).strip(), 0) > 0:
-                p['assigned_pos'] = str(pos).strip()
-                current_quotas[str(pos).strip()] -= 1
+            if pos: pos = str(pos).strip()
+            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                p['assigned_pos'] = pos
+                current_quotas[pos] -= 1
                 p['match_type'] = '2nd'
 
     # (Step 3) 3순위
     for p in team_members:
         if p['assigned_pos'] is None:
             pos = p['3순위']
-            if pos and pos != "선택 안함" and current_quotas.get(str(pos).strip(), 0) > 0:
-                p['assigned_pos'] = str(pos).strip()
-                current_quotas[str(pos).strip()] -= 1
+            if pos: pos = str(pos).strip()
+            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                p['assigned_pos'] = pos
+                current_quotas[pos] -= 1
                 p['match_type'] = '3rd'
                 
     # (Step 4) 무작위
