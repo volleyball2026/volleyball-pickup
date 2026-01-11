@@ -391,7 +391,7 @@ def assign_positions_in_team(team_members, history, wait_history):
                 
     return team_members
 
-# [수정] 스마트 픽업 충원 기능이 포함된 팀 생성 알고리즘
+# [수정] 포지션 중복 방지 & 균형 분배가 강화된 팀 생성 알고리즘
 def generate_vega_priority_schedule(df):
     players = df.to_dict('records')
     for p in players: p['score'] = calculate_score(p['레벨'])
@@ -404,38 +404,69 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
+        # 1. 매 라운드 섞기
         random.shuffle(vegas)
         random.shuffle(pickups)
         
         team_size = len(players) // 2
         
-        # 1. A팀의 핵심인 VEGA 멤버 먼저 배치
-        team_a = vegas[:team_size]
-        rem_vegas = vegas[team_size:] # 넘치는 VEGA는 B팀으로
+        # 2. 이번 경기의 '유효 포지션' 정의 (인원수에 따라 제외할 포지션 미리 계산)
+        # 이 포지션에 해당하는 사람을 우선적으로 A팀 빈자리에 채워넣음
+        valid_positions = set(POSITIONS_ALL)
         
-        # 2. A팀에 부족한 인원 계산
+        if team_size == 7:
+            valid_positions -= {'속공', '센터백'}
+        elif team_size == 6:
+            valid_positions -= {'속공', '센터백', '백차'}
+        elif team_size == 8:
+            # 8인제는 전체 수요를 보고 결정해야 하지만, 팀 배정 단계에서는 
+            # 일단 둘 다 유효하다고 보고, 나중에 배정 함수에서 쿼터로 조절하는 게 안전함.
+            pass
+
+        # 3. A팀 구성 시작 (VEGA 멤버 우선)
+        team_a = vegas[:team_size]
+        rem_vegas = vegas[team_size:] # 남는 VEGA는 B팀 후보
+        
+        # 4. A팀 빈자리 채우기 (스마트 스카우트 v2 - 한 명씩 체크)
         slots_needed = team_size - len(team_a)
         
-        if slots_needed > 0:
-            # [핵심] A팀에 부족한 포지션을 파악하여 픽업에서 '스카우트' 해옴
-            # 현재 A팀(VEGA) 멤버들의 1순위 포지션 집합
-            vega_positions = [p['1순위'] for p in team_a]
+        pool = pickups[:] # 픽업 멤버 풀
+        selected_for_a = []
+        
+        # 현재 A팀(VEGA 멤버들)이 희망하는 1순위 포지션 목록
+        current_positions = [p['1순위'] for p in team_a]
+        
+        for _ in range(slots_needed):
+            # A팀에 아예 없는 '유효 포지션' 찾기
+            missing_pos = list(valid_positions - set(current_positions))
             
-            # 픽업 멤버들을 'A팀에 필요한 사람 순서'로 정렬
-            # (A팀에 없는 포지션을 1순위로 쓴 픽업 멤버를 우선 선발)
-            pickups.sort(key=lambda x: 10 if x['1순위'] not in vega_positions else 0, reverse=True)
+            best_candidate = None
             
-            # 정렬된 순서대로 A팀 충원
-            team_a += pickups[:slots_needed]
-            team_b = pickups[slots_needed:] + rem_vegas
-        else:
-            team_b = rem_vegas + pickups
+            # (1) A팀에 없는 포지션을 1순위로 원하는 사람 찾기
+            candidates_perfect = [p for p in pool if p['1순위'] in missing_pos]
+            
+            if candidates_perfect:
+                best_candidate = candidates_perfect[0] # 찾았다!
+            else:
+                # (2) 딱 맞는 사람이 없으면, 그냥 남은 사람 중 아무나 데려옴
+                if pool:
+                    best_candidate = pool[0]
+            
+            # 선발된 사람 이동
+            if best_candidate:
+                selected_for_a.append(best_candidate)
+                current_positions.append(best_candidate['1순위']) # A팀 포지션 목록 갱신
+                pool.remove(best_candidate) # 풀에서 제거
+        
+        # 최종 팀 구성
+        team_a += selected_for_a
+        team_b = rem_vegas + pool # 남은 VEGA + 남은 픽업
 
-        # 3. 포지션 할당 (수정된 로직 적용)
+        # 5. 포지션 할당 (쿼터 적용)
         final_team_a = assign_positions_in_team(team_a, history, wait_history)
         final_team_b = assign_positions_in_team(team_b, history, wait_history)
         
-        # 4. 기록 업데이트
+        # 6. 기록 업데이트
         for p in final_team_a + final_team_b:
             name = p['이름']
             if p.get('got_1st', False): history[name] += 1
