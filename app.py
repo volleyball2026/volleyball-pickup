@@ -21,6 +21,7 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📞 관리자용 연락처 일괄 복사 기능 추가",
         "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)",
         "📢 포지션 선택 주의사항 문구 추가",
         "📅 정식 출범 일정(월/수/금) 안내 추가",
@@ -837,6 +838,24 @@ with tab7:
                 update_lineup(df_manage)
                 st.success("저장되었습니다.")
         else: st.info("신청자 없음")
+
+        # [추가] 연락처 일괄 복사 기능
+        st.divider()
+        with st.expander("📞 참가자 전체 연락처 복사 (단체문자)"):
+            # 관리자 탭 진입 시 이미 load_applicants()를 호출했지만, 
+            # 명확성을 위해 여기서 데이터를 활용합니다.
+            if apps:
+                phones = [p.get('연락처', '').strip() for p in apps if p.get('연락처')]
+                phones = [p for p in phones if p] # 빈 문자열 제거
+                
+                if phones:
+                    phone_string = ", ".join(phones)
+                    st.code(phone_string, language="text")
+                    st.caption(f"총 {len(phones)}명의 연락처입니다. 복사해서 문자 수신인에 붙여넣으세요.")
+                else:
+                    st.warning("연락처 정보가 없습니다.")
+            else:
+                st.info("참가자가 없습니다.")
 
         st.divider()
         st.subheader("🛠️ 게임 개설")
