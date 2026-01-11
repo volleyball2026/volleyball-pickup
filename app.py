@@ -323,35 +323,32 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [수정] 인원수에 따른 포지션 자동 조정 기능 추가
 def assign_positions_in_team(team_members, history, wait_history):
-    # 1. 우선순위 점수 계산 (기존 로직)
+    # 1. 우선순위 점수 계산 (히스토리 + 대기 횟수 + 랜덤)
     for p in team_members:
         name = p['이름']
         played_1st = history.get(name, 0)
         waited = wait_history.get(name, 0)
+        # 점수 = (참가 적을수록 유리) + (대기 많을수록 유리) + (미세한 랜덤)
         p['priority_score'] = (10 - played_1st) + (waited * 5) + random.random()
         p['assigned_pos'] = None 
     
-    # 점수 높은 순 정렬
+    # 점수 높은 순 정렬 (우선순위 확보)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
-    # 2. [NEW] 팀 인원수에 따른 포지션 쿼터 조정
+    # 2. 팀 인원수에 따른 포지션 쿼터 조정 (6~8인제 대응)
     team_size = len(team_members)
-    current_quotas = POSITION_QUOTAS.copy() # 기본 9인제 쿼터 가져오기
+    current_quotas = POSITION_QUOTAS.copy() # 기본 쿼터 복사
     
     if team_size == 8:
-        # 8인제: 속공 vs 센터백 중 희망자가 적은 포지션 제거
+        # 8인제: 속공 vs 센터백 중 희망자가 적은 포지션 1개 제거
         cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
         cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
-        
-        if cnt_fast >= cnt_cb:
-            current_quotas['센터백'] = 0 # 속공이 더 많거나 같으면 -> 센터백 제거
-        else:
-            current_quotas['속공'] = 0   # 센터백이 더 많으면 -> 속공 제거
+        if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
+        else: current_quotas['속공'] = 0
             
     elif team_size == 7:
-        # 7인제: 속공, 센터백 제거
+        # 7인제: 속공, 센터백 제거 (필수 포지션 위주)
         current_quotas['속공'] = 0
         current_quotas['센터백'] = 0
         
@@ -361,34 +358,27 @@ def assign_positions_in_team(team_members, history, wait_history):
         current_quotas['센터백'] = 0
         current_quotas['백차'] = 0
     
-    # (9명 이상이거나 5명 이하인 경우는 기본 쿼터 유지하거나 남는 자리 대기 처리됨)
-
-    # 3. 포지션 배정 (수정된 쿼터 적용)
+    # 3. 포지션 배정 로직
     # (1) 1순위 배정
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
-            p['assigned_pos'] = pos1
-            current_quotas[pos1] -= 1
-            p['got_1st'] = True
-        else:
-            p['got_1st'] = False
+            p['assigned_pos'] = pos1; current_quotas[pos1] -= 1; p['got_1st'] = True
+        else: p['got_1st'] = False
             
-    # (2) 2순위 배정
+    # (2) 2순위 배정 (1순위 실패자)
     for p in team_members:
         if p['assigned_pos'] is None:
             pos2 = p['2순위']
             if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
-                p['assigned_pos'] = pos2
-                current_quotas[pos2] -= 1
+                p['assigned_pos'] = pos2; current_quotas[pos2] -= 1
                 
     # (3) 3순위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
             pos3 = p['3순위']
             if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
-                p['assigned_pos'] = pos3
-                current_quotas[pos3] -= 1
+                p['assigned_pos'] = pos3; current_quotas[pos3] -= 1
                 
     # (4) 남은 자리 임의 배정 (빈 포지션 채우기)
     for p in team_members:
@@ -396,43 +386,47 @@ def assign_positions_in_team(team_members, history, wait_history):
             allocated = False
             for pos, count in current_quotas.items():
                 if count > 0:
-                    p['assigned_pos'] = pos
-                    current_quotas[pos] -= 1
-                    allocated = True
-                    break
-            if not allocated:
-                p['assigned_pos'] = "대기" # 모든 포지션이 꽉 찼을 때
+                    p['assigned_pos'] = pos; current_quotas[pos] -= 1; allocated = True; break
+            if not allocated: p['assigned_pos'] = "대기"
                 
     return team_members
 
 def generate_vega_priority_schedule(df):
     players = df.to_dict('records')
+    # 레벨 점수 계산 (참고용)
     for p in players: p['score'] = calculate_score(p['레벨'])
     
+    # VEGA와 픽업 분류
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
+    # 기록 초기화 (이번 세션용)
     history = {p['이름']: 0 for p in players}
     wait_history = {p['이름']: 0 for p in players}
     final_rounds = {}
 
     for round_num in range(1, 4):
+        # 매 라운드 섞어주기 (동점자 랜덤 처리)
         random.shuffle(vegas)
         random.shuffle(pickups)
         
         team_size = len(players) // 2
         
+        # [A팀 구성] VEGA 우선 채우기 + 부족하면 픽업 충원
         team_a_cand = vegas[:team_size]
         if len(team_a_cand) < team_size:
             needed = team_size - len(team_a_cand)
             team_a_cand += pickups[:needed]
             team_b_cand = pickups[needed:]
         else:
+            # VEGA가 너무 많으면 남은 VEGA는 B팀으로
             team_b_cand = vegas[team_size:] + pickups
 
+        # 포지션 할당 (수정된 함수 사용)
         final_team_a = assign_positions_in_team(team_a_cand, history, wait_history)
         final_team_b = assign_positions_in_team(team_b_cand, history, wait_history)
         
+        # 결과 기록 (다음 세트 반영을 위해)
         for p in final_team_a + final_team_b:
             name = p['이름']
             if p.get('got_1st', False): history[name] += 1
@@ -858,34 +852,74 @@ with tab6:
                     st.success("완료!")
                     
             if 'fair_results' in st.session_state:
+                # 데이터프레임에 반영 (저장 준비)
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
-                    for p in team_a: schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']; schedule_map[p['이름']][f"팀{r_num}"] = "A팀"
-                    for p in team_b: schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']; schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
+                    for p in team_a: 
+                        schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']
+                        schedule_map[p['이름']][f"팀{r_num}"] = "A팀"
+                    for p in team_b: 
+                        schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']
+                        schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
+                
                 for idx, row in df.iterrows():
                     name = row['이름']
                     if name in schedule_map:
-                        for r in range(1, 4): df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', ''); df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
+                        for r in range(1, 4): 
+                            df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
+                            df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
+                # 화면 표시
                 r_tabs = st.tabs(["1·2", "3·4", "5·6"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
+                        
+                        # [추가] 관리자용 경기 정보 (제외 포지션 확인)
+                        real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
+                        if real_players:
+                            count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
+                            count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
+                            
+                            assigned_set = set(p['assigned_pos'] for p in real_players)
+                            full_set = set(POSITIONS_ALL)
+                            missing = list(full_set - assigned_set)
+                            
+                            info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**"
+                            if missing: info_msg += f" (제외: {', '.join(missing)})"
+                            else: info_msg += " (풀 포지션)"
+                            st.info(info_msg)
+
                         c1, c2 = st.columns(2)
                         with c1: 
                             st.error("🔴 A팀 (VEGA)")
                             for p in team_a: 
-                                if p['assigned_pos']!="대기": st.write(f"- {p['assigned_pos']}: {p['이름']}")
+                                if p['assigned_pos']!="대기":
+                                    # 아이콘 로직 적용
+                                    icon = "✅" if p['assigned_pos'] == p['1순위'] else "⚠️"
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
                         with c2: 
                             st.info("🔵 B팀 (픽업)")
                             for p in team_b: 
-                                if p['assigned_pos']!="대기": st.write(f"- {p['assigned_pos']}: {p['이름']}")
+                                if p['assigned_pos']!="대기": 
+                                    # 아이콘 로직 적용
+                                    icon = "✅" if p['assigned_pos'] == p['1순위'] else "⚠️"
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                        
+                        # 대기 인원 표시
+                        st.markdown("---")
+                        bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
+                        bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
+                        if bench_a or bench_b:
+                            st.caption("🛌 대기 (다음 우선권 부여)")
+                            for p in bench_a + bench_b:
+                                st.write(f"- {p['이름']} (희망: {p['1순위']})")
+
             st.divider()
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
                 final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
-
 # --- 탭 7: 관리자 ---
 with tab7:
     st.header("관리자 메뉴")
