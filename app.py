@@ -323,64 +323,64 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
+# [수정] VEGA 절대 우대 + 인원수별 자동 조정 알고리즘
 def assign_positions_in_team(team_members, history, wait_history):
-    # 1. 우선순위 점수 계산 (히스토리 + 대기 횟수 + 랜덤)
+    # 1. 우선순위 점수 계산
     for p in team_members:
         name = p['이름']
         played_1st = history.get(name, 0)
         waited = wait_history.get(name, 0)
-        # 점수 = (참가 적을수록 유리) + (대기 많을수록 유리) + (미세한 랜덤)
-        p['priority_score'] = (10 - played_1st) + (waited * 5) + random.random()
+        
+        # [핵심 수정] VEGA 회원에게 압도적인 가산점 부여 (1000점)
+        # 픽업 참가자가 아무리 점수가 높아도 VEGA를 이길 수 없음
+        is_vega = "[VEGA]" in name
+        vega_bonus = 1000 if is_vega else 0
+        
+        # 점수 = (VEGA 보너스) + (참가 적을수록 유리) + (대기 많을수록 유리) + (랜덤)
+        p['priority_score'] = vega_bonus + (10 - played_1st) + (waited * 5) + random.random()
         p['assigned_pos'] = None 
     
-    # 점수 높은 순 정렬 (우선순위 확보)
+    # 점수 높은 순 정렬 (VEGA 멤버들이 리스트 최상단으로 올라감)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
     # 2. 팀 인원수에 따른 포지션 쿼터 조정 (6~8인제 대응)
     team_size = len(team_members)
-    current_quotas = POSITION_QUOTAS.copy() # 기본 쿼터 복사
+    current_quotas = POSITION_QUOTAS.copy()
     
     if team_size == 8:
-        # 8인제: 속공 vs 센터백 중 희망자가 적은 포지션 1개 제거
         cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
         cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
         if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
         else: current_quotas['속공'] = 0
             
     elif team_size == 7:
-        # 7인제: 속공, 센터백 제거 (필수 포지션 위주)
         current_quotas['속공'] = 0
         current_quotas['센터백'] = 0
         
     elif team_size == 6:
-        # 6인제: 속공, 센터백, 백차 제거
         current_quotas['속공'] = 0
         current_quotas['센터백'] = 0
         current_quotas['백차'] = 0
     
-    # 3. 포지션 배정 로직
-    # (1) 1순위 배정
+    # 3. 포지션 배정 (1순위 -> 2순위 -> 3순위 -> 나머지)
     for p in team_members:
         pos1 = p['1순위']
         if current_quotas.get(pos1, 0) > 0:
             p['assigned_pos'] = pos1; current_quotas[pos1] -= 1; p['got_1st'] = True
         else: p['got_1st'] = False
             
-    # (2) 2순위 배정 (1순위 실패자)
     for p in team_members:
         if p['assigned_pos'] is None:
             pos2 = p['2순위']
             if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
                 p['assigned_pos'] = pos2; current_quotas[pos2] -= 1
                 
-    # (3) 3순위 배정
     for p in team_members:
         if p['assigned_pos'] is None:
             pos3 = p['3순위']
             if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
                 p['assigned_pos'] = pos3; current_quotas[pos3] -= 1
                 
-    # (4) 남은 자리 임의 배정 (빈 포지션 채우기)
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
