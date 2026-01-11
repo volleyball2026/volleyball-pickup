@@ -323,7 +323,7 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (디버깅 로그 포함)
+# [NEW] 우선순위 점수 계산기
 def get_priority_score(player, last_result_map, last_pos_map):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
@@ -333,7 +333,7 @@ def get_priority_score(player, last_result_map, last_pos_map):
     if "[VEGA]" in name:
         score += 100000
         
-    # 2. 한풀이
+    # 2. 한풀이 (직전 결과에 따른 보상)
     last_res = last_result_map.get(name)
     if last_res == 'wait': score += 500
     elif last_res == '3rd': score += 300
@@ -341,25 +341,28 @@ def get_priority_score(player, last_result_map, last_pos_map):
     elif last_res == 'random': score += 200
     elif last_res == '1st': score -= 500
     
-    # 3. [핵심] 연속 배정 방지 (디버깅)
+    # 3. [핵심] 연속 배정 방지 (점수 폭격)
+    # 직전에 했던 포지션을 또 1순위로 원하면 -> -1,000,000점
     last_pos = last_pos_map.get(name)
     if last_pos: last_pos = str(last_pos).strip()
     
-    # 강제 차단 조건 확인
-    if last_pos and last_pos == target_pos:
+    if last_pos == target_pos:
         score -= 1000000
-        # [디버깅] 차단된 경우 화면에 출력 (나중에 주석 처리)
-        # st.write(f"🚫 [차단] {name}: 전판 {last_pos} -> 이번 {target_pos} (점수 깎임)")
         
     score += random.random()
     return score
 
 def assign_positions_in_team(team_members, last_pos_map):
-    # 초기화
+    # 초기화 및 금지 포지션 설정
     for p in team_members:
         p['assigned_pos'] = None
         p['match_type'] = None
         p['got_1st'] = False
+        
+        name = p['이름']
+        last = last_pos_map.get(name)
+        if last: p['forbidden_pos'] = str(last).strip()
+        else: p['forbidden_pos'] = None
 
     # 1. 팀원 줄 세우기 (점수 높은 순)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
@@ -384,8 +387,8 @@ def assign_positions_in_team(team_members, last_pos_map):
     for p in team_members:
         pos = str(p['1순위']).strip()
         
-        # [🚨 핵심 수정] 점수 폭격 맞은 사람(-50만 점 이하)은 
-        # 자리가 있어도 1순위 배정을 강제로 건너뜀!
+        # [⛔ 절대 방어선 1] 점수 폭격 맞은 사람(-50만점 이하)은 무조건 탈락
+        # 자리가 남아돌아도 절대 배정 안 함!
         if p['priority_score'] < -500000:
             p['got_1st'] = False
             continue
@@ -403,7 +406,11 @@ def assign_positions_in_team(team_members, last_pos_map):
         if p['assigned_pos'] is None:
             pos = p['2순위']
             if pos: pos = str(pos).strip()
+            
             if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                # 2순위라도 금지된 포지션이면 패스
+                if pos == p['forbidden_pos']: continue
+                
                 p['assigned_pos'] = pos
                 current_quotas[pos] -= 1
                 p['match_type'] = '2nd'
@@ -413,17 +420,23 @@ def assign_positions_in_team(team_members, last_pos_map):
         if p['assigned_pos'] is None:
             pos = p['3순위']
             if pos: pos = str(pos).strip()
+            
             if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
+                if pos == p['forbidden_pos']: continue
+                
                 p['assigned_pos'] = pos
                 current_quotas[pos] -= 1
                 p['match_type'] = '3rd'
                 
-    # (Step 4) 무작위
+    # (Step 4) 무작위 (빈자리 채우기)
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
             for pos, count in current_quotas.items():
                 if count > 0:
+                    # [⛔ 절대 방어선 2] 빈자리라도 내가 했던 거면 절대 안 앉음
+                    if pos == p['forbidden_pos']: continue
+                    
                     p['assigned_pos'] = pos
                     current_quotas[pos] -= 1
                     p['match_type'] = 'random'
@@ -445,20 +458,13 @@ def generate_vega_priority_schedule(df):
     
     final_rounds = {}
     
-    # [디버깅] 로그 출력을 위한 공간
-    log_area = st.expander("🛠️ 알고리즘 작동 로그 (디버깅용)", expanded=True)
+    # 로그 출력 창 (확인용)
+    log_area = st.expander("🛠️ 알고리즘 로그", expanded=False)
 
     for round_num in range(1, 4):
-        with log_area:
-            st.markdown(f"### 🔄 **{round_num*2-1}·{round_num*2} 세트 배정 시작**")
-        
         # 1. 점수 계산
         for p in vegas + pickups:
             p['priority_score'] = get_priority_score(p, last_result_map, last_pos_map)
-            # 로그 출력 (점수가 -50만 이하인 사람만 확인)
-            if p['priority_score'] < 0:
-                with log_area:
-                    st.caption(f"📉 [패널티] {p['이름']}: {p['1순위']} 신청 -> 점수 {p['priority_score']:.1f}")
             
         # 2. 정렬
         vegas.sort(key=lambda x: x['priority_score'], reverse=True)
@@ -503,24 +509,22 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a, last_pos_map)
         final_team_b = assign_positions_in_team(team_b, last_pos_map)
         
-        # 6. 기록 업데이트 (로그 확인)
+        # 6. 기록 업데이트
         new_last_pos_map = {p['이름']: None for p in players}
-        
-        with log_area:
-            st.write("📝 **결과 기록 (다음 판 반영)**")
         
         for p in final_team_a + final_team_b:
             name = p['이름']
             last_result_map[name] = p.get('match_type')
             
-            # [수정] match_type과 상관없이 실제 배정된 포지션을 기록
+            # 1순위든 땜빵이든 실제로 뛴 포지션을 기록
             if p['assigned_pos'] and p['assigned_pos'] != "대기":
                 new_last_pos_map[name] = str(p['assigned_pos']).strip()
-                # 로그에 특정 인물(문제가 된 분들)만 찍어보기
-                if "이희성" in name or "백준현" in name:
+                
+                # 로그에 차단 대상 기록
+                if p['priority_score'] < -500000:
                     with log_area:
-                        st.write(f"- {name}: {p['assigned_pos']}함 (다음 판 금지됨)")
-            
+                        st.write(f"🛑 [차단됨] {name}: 점수 {p['priority_score']:.0f} -> 배정 결과: {p['assigned_pos']}")
+
         last_pos_map = new_last_pos_map
             
         final_rounds[round_num] = (final_team_a, final_team_b)
