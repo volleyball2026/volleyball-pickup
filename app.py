@@ -646,6 +646,26 @@ with tab2:
                 if col_pos in df_final.columns:
                     playing = df_final[df_final[col_pos] != '']
                     if not playing.empty:
+                        # [추가] 경기 방식 및 제외 포지션 안내 기능
+                        real_players = playing[playing[col_pos] != "대기"]
+                        if not real_players.empty:
+                            count_a = len(real_players[real_players[col_team]=="A팀"])
+                            count_b = len(real_players[real_players[col_team]=="B팀"])
+                            
+                            # 현재 배정된 포지션 확인
+                            assigned_set = set(real_players[col_pos].unique())
+                            full_set = set(POSITIONS_ALL)
+                            # 전체 포지션 중 배정되지 않은 포지션 찾기
+                            missing = list(full_set - assigned_set)
+                            
+                            info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
+                            if missing:
+                                info_msg += f" (제외 포지션: {', '.join(missing)})"
+                            else:
+                                info_msg += " (풀 포지션)"
+                            
+                            st.info(info_msg)
+
                         c1, c2 = st.columns(2)
                         with c1:
                             st.error("🔴 A팀 (VEGA)")
