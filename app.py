@@ -21,6 +21,7 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📢 노쇼(No-Show) 방지 안내 문구 추가",
         "🔄 관리자 참가확인 저장 시 자동 새로고침 적용",
         "📝 용어 변경 (입금확인 -> 참가확인)",
         "📞 관리자용 연락처 일괄 복사 기능 추가",
@@ -569,6 +570,9 @@ with tab1:
             show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
             real_cols = [c for c in show_cols if c in df_public.columns]
             st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True)
+            # [추가] 노쇼 방지 안내 문구
+            st.caption("📢 **유의사항:** 참가 확정 후 불참 시에는 꼭 **[신청 취소]**를 해주세요. \n"
+                       "연락 없이 불참(No-Show)하는 경우가 반복되면, 원활한 운영을 위해 **향후 참가 신청이 제한**될 수 있습니다.")
         else: st.info("아직 신청자가 없습니다.")
     else: st.warning("모집 중인 게임이 없습니다.")
 
