@@ -323,90 +323,70 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (꼼수 방지 밸런스 패치)
-def get_priority_score(player, last_result_map):
+# [NEW] 우선순위 점수 계산기 (점수 폭격 버전)
+def get_priority_score(player, last_result_map, last_pos_map):
     name = player['이름']
+    target_pos = player['1순위']
     score = 1000.0
     
     # 1. VEGA 절대 우대
     if "[VEGA]" in name:
         score += 100000
         
-    # 2. 한풀이 점수 (직전 세트 결과에 따른 계급 나누기)
+    # 2. 한풀이 점수 (직전 결과에 따른 보상)
     last_res = last_result_map.get(name)
+    if last_res == 'wait': score += 500
+    elif last_res == '3rd': score += 300
+    elif last_res == '2nd': score += 200
+    elif last_res == 'random': score += 200
     
-    if last_res == 'wait':
-        score += 500  # 0티어: 대기하셨던 분
-    elif last_res == '3rd':
-        score += 300  # 1티어: 3순위까지 밀려서 희생하신 분
-    elif last_res == '2nd':
-        score += 200  # 2티어: 2순위로 양보하신 분
-    elif last_res == 'random':
-        score += 200  # 2티어: 무작위 배정 (꼼수 방지용)
-    elif last_res == '1st':
-        score -= 500  # 4티어: 1순위 하신 분
+    # 3. [핵심] 연속 배정 방지 (점수 폭격)
+    # 직전에 했던 포지션을 또 1순위로 원하면 -> 점수 -1,000,000점
+    # 경쟁자가 단 한 명이라도 있으면 무조건 밀려남.
+    if last_pos_map.get(name) == target_pos:
+        score -= 1000000
         
-    # 3. 미세 랜덤
+    # 4. 미세 랜덤
     score += random.random()
     
     return score
 
-def assign_positions_in_team(team_members, last_pos_map):
-    # [수정] 0. 필수 변수 초기화 (에러 해결!)
+def assign_positions_in_team(team_members):
+    # [수정] 0. 초기화
     for p in team_members:
         p['assigned_pos'] = None
         p['match_type'] = None
         p['got_1st'] = False
 
-    # 1. 팀원 줄 세우기
+    # 1. 팀원 줄 세우기 (점수 폭격 맞은 사람은 맨 뒤로 감)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
     # 2. 쿼터 설정
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
-    max_quotas = POSITION_QUOTAS.copy()
     
     if team_size == 8:
         cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
         cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
-        if cnt_fast >= cnt_cb: 
-            current_quotas['센터백'] = 0; max_quotas['센터백'] = 0
-        else: 
-            current_quotas['속공'] = 0; max_quotas['속공'] = 0
+        if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
+        else: current_quotas['속공'] = 0
     elif team_size == 7:
-        for pos in ['속공', '센터백']:
-            current_quotas[pos] = 0; max_quotas[pos] = 0
+        for pos in ['속공', '센터백']: current_quotas[pos] = 0
     elif team_size == 6:
-        for pos in ['속공', '센터백', '백차']:
-            current_quotas[pos] = 0; max_quotas[pos] = 0
+        for pos in ['속공', '센터백', '백차']: current_quotas[pos] = 0
             
-    # 3. 포지션별 수요 계산
-    demand_counts = {pos: 0 for pos in POSITIONS_ALL}
-    for p in team_members:
-        if p['1순위'] in demand_counts: demand_counts[p['1순위']] += 1
-    
-    # 4. 단계별 배정
+    # 3. 단계별 배정 (복잡한 조건문 제거 -> 순수하게 줄 선 대로 배정)
     
     # (Step 1) 1순위 배정
     for p in team_members:
         pos = p['1순위']
-        name = p['이름']
-        
-        # [조건부 양보]
-        played_last = (last_pos_map.get(name) == pos)
-        is_contested = demand_counts.get(pos, 0) > max_quotas.get(pos, 0)
-        
-        if played_last and is_contested:
-            p['got_1st'] = False
-            continue
-            
         if current_quotas.get(pos, 0) > 0:
             p['assigned_pos'] = pos
             current_quotas[pos] -= 1
             p['match_type'] = '1st'
             p['got_1st'] = True
         else:
-            p['got_1st'] = False
+            p['got_1st'] = False # 점수가 낮아서(폭격 맞아서) 밀림
             
     # (Step 2) 2순위
     for p in team_members:
@@ -448,18 +428,17 @@ def generate_vega_priority_schedule(df):
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
-    # 직전 라운드 결과 기록
     last_result_map = {p['이름']: None for p in players} 
     last_pos_map = {p['이름']: None for p in players}    
     
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 1. 점수 계산
+        # 1. 점수 계산 (last_pos_map을 넘겨서 연속 배정 시 폭격)
         for p in vegas + pickups:
-            p['priority_score'] = get_priority_score(p, last_result_map)
+            p['priority_score'] = get_priority_score(p, last_result_map, last_pos_map)
             
-        # 2. 점수 높은 순 정렬
+        # 2. 정렬
         vegas.sort(key=lambda x: x['priority_score'], reverse=True)
         pickups.sort(key=lambda x: x['priority_score'], reverse=True)
         
@@ -499,10 +478,10 @@ def generate_vega_priority_schedule(df):
         team_b = rem_vegas + pool
         
         # 5. 포지션 배정
-        final_team_a = assign_positions_in_team(team_a, last_pos_map)
-        final_team_b = assign_positions_in_team(team_b, last_pos_map)
+        final_team_a = assign_positions_in_team(team_a)
+        final_team_b = assign_positions_in_team(team_b)
         
-        # 6. 결과 기록
+        # 6. 결과 기록 (다음 라운드 폭격 준비)
         new_last_pos_map = {p['이름']: None for p in players}
         
         for p in final_team_a + final_team_b:
