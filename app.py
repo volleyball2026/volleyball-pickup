@@ -21,12 +21,11 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "📝 용어 변경 (입금확인 -> 참가확인)",
         "📞 관리자용 연락처 일괄 복사 기능 추가",
         "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)",
         "📢 포지션 선택 주의사항 문구 추가",
-        "📅 정식 출범 일정(월/수/금) 안내 추가",
-        "🔄 게임 개설 시 명단 자동 새로고침 적용",
-        "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)"
+        "📅 정식 출범 일정(월/수/금) 안내 추가"
     ]
 }
 
@@ -176,6 +175,7 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
+        # [주의] 내부 데이터 컬럼명은 '입금'으로 유지 (기존 데이터 호환성)
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
@@ -560,7 +560,8 @@ with tab1:
             st.divider()
             st.markdown("##### 📋 신청자 명단")
             if '입금' not in df_public.columns: df_public['입금'] = "X"
-            df_public['상태'] = df_public['입금'].apply(lambda x: "💸 입금완료" if str(x).strip().upper() == "O" else "-")
+            # [수정] 입금완료 -> 참가확인
+            df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 참가확인" if str(x).strip().upper() == "O" else "-")
             
             if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
             if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
@@ -632,7 +633,8 @@ with tab3:
                 
                 st.subheader("📍 현재 신청 상태")
                 if my_cur:
-                    status = "💸 입금완료" if str(my_cur[0].get('입금')).upper() == 'O' else "미입금"
+                    # [수정] 입금완료 -> 참가확인
+                    status = "✅ 참가확인" if str(my_cur[0].get('입금')).upper() == 'O' else "미확인"
                     st.success(f"신청 확인됨! (상태: {status})")
                     st.dataframe(pd.DataFrame(my_cur)[['이름', '1순위', '레벨']], hide_index=True)
                 else: st.warning("현재 신청 내역 없음")
@@ -817,7 +819,8 @@ with tab7:
                     st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
-        st.subheader("💰 입금 관리")
+        # [수정] 입금 관리 -> 참가 확인 관리
+        st.subheader("✅ 참가 확인 관리 (시범운영)")
         apps = load_applicants()
         if apps:
             df_manage = pd.DataFrame(apps)
@@ -828,34 +831,29 @@ with tab7:
             cols_manage = ["이름", "연락처", "입금_bool", "1순위"]
             edited_manage = st.data_editor(
                 df_manage[cols_manage],
-                column_config={"입금_bool": st.column_config.CheckboxColumn("입금 확인")},
+                column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, # [수정] 라벨 변경
                 hide_index=True
             )
             
-            if st.button("입금 현황 저장"):
+            # [수정] 버튼 텍스트 변경
+            if st.button("참가 현황 저장"):
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
                 st.success("저장되었습니다.")
         else: st.info("신청자 없음")
 
-        # [추가] 연락처 일괄 복사 기능
         st.divider()
         with st.expander("📞 참가자 전체 연락처 복사 (단체문자)"):
-            # 관리자 탭 진입 시 이미 load_applicants()를 호출했지만, 
-            # 명확성을 위해 여기서 데이터를 활용합니다.
             if apps:
                 phones = [p.get('연락처', '').strip() for p in apps if p.get('연락처')]
-                phones = [p for p in phones if p] # 빈 문자열 제거
-                
+                phones = [p for p in phones if p]
                 if phones:
                     phone_string = ", ".join(phones)
                     st.code(phone_string, language="text")
                     st.caption(f"총 {len(phones)}명의 연락처입니다. 복사해서 문자 수신인에 붙여넣으세요.")
-                else:
-                    st.warning("연락처 정보가 없습니다.")
-            else:
-                st.info("참가자가 없습니다.")
+                else: st.warning("연락처 정보가 없습니다.")
+            else: st.info("참가자가 없습니다.")
 
         st.divider()
         st.subheader("🛠️ 게임 개설")
