@@ -391,42 +391,51 @@ def assign_positions_in_team(team_members, history, wait_history):
                 
     return team_members
 
+# [수정] 스마트 픽업 충원 기능이 포함된 팀 생성 알고리즘
 def generate_vega_priority_schedule(df):
     players = df.to_dict('records')
-    # 레벨 점수 계산 (참고용)
     for p in players: p['score'] = calculate_score(p['레벨'])
     
-    # VEGA와 픽업 분류
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
-    # 기록 초기화 (이번 세션용)
     history = {p['이름']: 0 for p in players}
     wait_history = {p['이름']: 0 for p in players}
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 매 라운드 섞어주기 (동점자 랜덤 처리)
         random.shuffle(vegas)
         random.shuffle(pickups)
         
         team_size = len(players) // 2
         
-        # [A팀 구성] VEGA 우선 채우기 + 부족하면 픽업 충원
-        team_a_cand = vegas[:team_size]
-        if len(team_a_cand) < team_size:
-            needed = team_size - len(team_a_cand)
-            team_a_cand += pickups[:needed]
-            team_b_cand = pickups[needed:]
-        else:
-            # VEGA가 너무 많으면 남은 VEGA는 B팀으로
-            team_b_cand = vegas[team_size:] + pickups
-
-        # 포지션 할당 (수정된 함수 사용)
-        final_team_a = assign_positions_in_team(team_a_cand, history, wait_history)
-        final_team_b = assign_positions_in_team(team_b_cand, history, wait_history)
+        # 1. A팀의 핵심인 VEGA 멤버 먼저 배치
+        team_a = vegas[:team_size]
+        rem_vegas = vegas[team_size:] # 넘치는 VEGA는 B팀으로
         
-        # 결과 기록 (다음 세트 반영을 위해)
+        # 2. A팀에 부족한 인원 계산
+        slots_needed = team_size - len(team_a)
+        
+        if slots_needed > 0:
+            # [핵심] A팀에 부족한 포지션을 파악하여 픽업에서 '스카우트' 해옴
+            # 현재 A팀(VEGA) 멤버들의 1순위 포지션 집합
+            vega_positions = [p['1순위'] for p in team_a]
+            
+            # 픽업 멤버들을 'A팀에 필요한 사람 순서'로 정렬
+            # (A팀에 없는 포지션을 1순위로 쓴 픽업 멤버를 우선 선발)
+            pickups.sort(key=lambda x: 10 if x['1순위'] not in vega_positions else 0, reverse=True)
+            
+            # 정렬된 순서대로 A팀 충원
+            team_a += pickups[:slots_needed]
+            team_b = pickups[slots_needed:] + rem_vegas
+        else:
+            team_b = rem_vegas + pickups
+
+        # 3. 포지션 할당 (수정된 로직 적용)
+        final_team_a = assign_positions_in_team(team_a, history, wait_history)
+        final_team_b = assign_positions_in_team(team_b, history, wait_history)
+        
+        # 4. 기록 업데이트
         for p in final_team_a + final_team_b:
             name = p['이름']
             if p.get('got_1st', False): history[name] += 1
