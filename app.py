@@ -21,11 +21,10 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2025.01.03": [
+        "🔄 관리자 참가확인 저장 시 자동 새로고침 적용",
         "📝 용어 변경 (입금확인 -> 참가확인)",
         "📞 관리자용 연락처 일괄 복사 기능 추가",
-        "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)",
-        "📢 포지션 선택 주의사항 문구 추가",
-        "📅 정식 출범 일정(월/수/금) 안내 추가"
+        "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)"
     ]
 }
 
@@ -175,7 +174,6 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # [주의] 내부 데이터 컬럼명은 '입금'으로 유지 (기존 데이터 호환성)
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
@@ -819,7 +817,6 @@ with tab7:
                     st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
-        # [수정] 입금 관리 -> 참가 확인 관리
         st.subheader("✅ 참가 확인 관리 (시범운영)")
         apps = load_applicants()
         if apps:
@@ -831,16 +828,18 @@ with tab7:
             cols_manage = ["이름", "연락처", "입금_bool", "1순위"]
             edited_manage = st.data_editor(
                 df_manage[cols_manage],
-                column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, # [수정] 라벨 변경
+                column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")},
                 hide_index=True
             )
             
-            # [수정] 버튼 텍스트 변경
+            # [수정] 저장 후 새로고침 (즉시 반영)
             if st.button("참가 현황 저장"):
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
                 st.success("저장되었습니다.")
+                time.sleep(1.0) # 잠시 대기 후
+                st.rerun()      # 새로고침!
         else: st.info("신청자 없음")
 
         st.divider()
