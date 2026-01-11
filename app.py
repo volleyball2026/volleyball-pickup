@@ -323,74 +323,93 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (강력한 순환 로직)
-def get_priority_score(player, history, fail_history, wait_history):
+# [NEW] 우선순위 점수 계산기 (꼼수 방지 밸런스 패치)
+def get_priority_score(player, last_result_map):
     name = player['이름']
-    
-    # 1. 기본 점수
     score = 1000.0
     
-    # 2. VEGA 절대 우대 (100000점 - 넘사벽)
+    # 1. VEGA 절대 우대
     if "[VEGA]" in name:
         score += 100000
         
-    # 3. [핵심] 성공 페널티 (1순위 해봤으면 비켜라)
-    # 한 번 성공할 때마다 -500점 (즉시 꼴찌로 추락)
-    played = history.get(name, 0)
-    score -= (played * 500)
+    # 2. 한풀이 점수 (직전 세트 결과에 따른 계급 나누기)
+    last_res = last_result_map.get(name)
     
-    # 4. [핵심] 한풀이 보너스 (못 해봤으면 비켜줄게)
-    # 한 번 실패할 때마다 +200점 (무조건 상위권 진입)
-    fails = fail_history.get(name, 0)
-    score += (fails * 200)
-    
-    # 5. 대기 보너스
-    waits = wait_history.get(name, 0)
-    score += (waits * 50) 
-    
-    # 6. 랜덤 (동점자 처리용)
+    if last_res == 'wait':
+        score += 500  # 0티어: 대기하셨던 분 (최우선)
+        
+    elif last_res == '3rd':
+        score += 300  # 1티어: 3순위까지 밀려서 희생하신 분 (보상 강화)
+        
+    elif last_res == '2nd':
+        score += 200  # 2티어: 2순위로 양보하신 분
+        
+    elif last_res == 'random':
+        score += 200  # 2티어: 무작위 배정 (2순위와 동급 점수 부여)
+        # [핵심] 무작위 점수를 2순위와 같게 낮춰서, 
+        # 일부러 2~3순위를 안 적고 무작위를 노리는 꼼수를 차단함.
+        # (비워봤자 점수 이득 없고 이상한 포지션 걸릴 위험만 큼)
+
+    elif last_res == '1st':
+        score -= 500  # 4티어: 1순위 하신 분 (확실한 양보)
+        
+    # 3. 미세 랜덤 (점수가 같을 때 로테이션 돌리기 위함)
     score += random.random()
     
     return score
 
-def assign_positions_in_team(team_members, history, fail_history, wait_history):
-    # 1. 점수 계산
-    for p in team_members:
-        p['priority_score'] = get_priority_score(p, history, fail_history, wait_history)
-        p['assigned_pos'] = None
-        p['match_type'] = None # 배정 타입 (1st, 2nd, 3rd, random)
-    
-    # 2. 점수 높은 순 정렬 (이 순서대로 우선권을 가짐)
+def assign_positions_in_team(team_members, last_pos_map):
+    # 1. 팀원 줄 세우기
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
-    # 3. 쿼터 설정
+    # 2. 쿼터 설정
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
+    max_quotas = POSITION_QUOTAS.copy()
     
     if team_size == 8:
         cnt_fast = sum(1 for p in team_members if '속공' in p['1순위'])
         cnt_cb = sum(1 for p in team_members if '센터백' in p['1순위'])
-        if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
-        else: current_quotas['속공'] = 0
+        if cnt_fast >= cnt_cb: 
+            current_quotas['센터백'] = 0; max_quotas['센터백'] = 0
+        else: 
+            current_quotas['속공'] = 0; max_quotas['속공'] = 0
     elif team_size == 7:
-        current_quotas['속공'] = 0
-        current_quotas['센터백'] = 0
+        for pos in ['속공', '센터백']:
+            current_quotas[pos] = 0; max_quotas[pos] = 0
     elif team_size == 6:
-        current_quotas['속공'] = 0
-        current_quotas['센터백'] = 0
-        current_quotas['백차'] = 0
+        for pos in ['속공', '센터백', '백차']:
+            current_quotas[pos] = 0; max_quotas[pos] = 0
+            
+    # 3. 포지션별 수요 계산
+    demand_counts = {pos: 0 for pos in POSITIONS_ALL}
+    for p in team_members:
+        if p['1순위'] in demand_counts: demand_counts[p['1순위']] += 1
     
-    # 4. [단계별 배정]
+    # 4. 단계별 배정
     
-    # (Step 1) 1순위 희망자 배정
+    # (Step 1) 1순위 배정
     for p in team_members:
         pos = p['1순위']
+        name = p['이름']
+        
+        # [조건부 양보] 직전에 했고 + 경쟁 있으면 -> 탈락
+        played_last = (last_pos_map.get(name) == pos)
+        is_contested = demand_counts.get(pos, 0) > max_quotas.get(pos, 0)
+        
+        if played_last and is_contested:
+            p['got_1st'] = False
+            continue
+            
         if current_quotas.get(pos, 0) > 0:
             p['assigned_pos'] = pos
             current_quotas[pos] -= 1
             p['match_type'] = '1st'
+            p['got_1st'] = True
+        else:
+            p['got_1st'] = False
             
-    # (Step 2) 2순위 배정 (아직 배정 안 된 사람 대상)
+    # (Step 2) 2순위
     for p in team_members:
         if p['assigned_pos'] is None:
             pos = p['2순위']
@@ -399,7 +418,7 @@ def assign_positions_in_team(team_members, history, fail_history, wait_history):
                 current_quotas[pos] -= 1
                 p['match_type'] = '2nd'
 
-    # (Step 3) 3순위 배정
+    # (Step 3) 3순위
     for p in team_members:
         if p['assigned_pos'] is None:
             pos = p['3순위']
@@ -408,7 +427,7 @@ def assign_positions_in_team(team_members, history, fail_history, wait_history):
                 current_quotas[pos] -= 1
                 p['match_type'] = '3rd'
                 
-    # (Step 4) 남은 자리 무작위 배정
+    # (Step 4) 무작위
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
@@ -430,52 +449,47 @@ def generate_vega_priority_schedule(df):
     vegas = [p for p in players if "[VEGA]" in p['이름']]
     pickups = [p for p in players if "[VEGA]" not in p['이름']]
     
-    # 기록 초기화
-    history = {p['이름']: 0 for p in players}      # 1순위 성공 횟수
-    fail_history = {p['이름']: 0 for p in players} # 1순위 실패 횟수
-    wait_history = {p['이름']: 0 for p in players} # 대기 횟수
+    # 직전 라운드 결과 기록
+    last_result_map = {p['이름']: None for p in players} 
+    last_pos_map = {p['이름']: None for p in players}    
     
     final_rounds = {}
 
     for round_num in range(1, 4):
-        random.shuffle(vegas)
-        random.shuffle(pickups)
+        # 1. 점수 계산
+        for p in vegas + pickups:
+            p['priority_score'] = get_priority_score(p, last_result_map)
+            
+        # 2. 점수 높은 순 정렬
+        vegas.sort(key=lambda x: x['priority_score'], reverse=True)
+        pickups.sort(key=lambda x: x['priority_score'], reverse=True)
         
         team_size = len(players) // 2
         
+        # 3. 유효 포지션 확인
         valid_positions = set(POSITIONS_ALL)
         if team_size == 7: valid_positions -= {'속공', '센터백'}
         elif team_size == 6: valid_positions -= {'속공', '센터백', '백차'}
         
-        # --- [팀 구성: A팀 부족 포지션 채우기] ---
-        for p in vegas + pickups:
-            p['current_round_score'] = get_priority_score(p, history, fail_history, wait_history)
-        
-        # 점수 높은 순 정렬 (VEGA 상위권)
-        vegas.sort(key=lambda x: x['current_round_score'], reverse=True)
-        pickups.sort(key=lambda x: x['current_round_score'], reverse=True)
-        
+        # 4. A팀 스카우트
         team_a = vegas[:team_size]
         rem_vegas = vegas[team_size:]
         
         slots_needed = team_size - len(team_a)
-        
-        # A팀 스카우트 (이번 라운드 점수가 높은 픽업 멤버 우선)
         pool = pickups[:]
         selected_for_a = []
         current_positions = [p['1순위'] for p in team_a]
         
         for _ in range(slots_needed):
             missing_pos = list(valid_positions - set(current_positions))
-            
-            # (1) A팀에 없는 포지션을 1순위로 원하면서 + 점수가 높은 사람
             candidates = [p for p in pool if p['1순위'] in missing_pos]
             
             if candidates:
-                candidates.sort(key=lambda x: x['current_round_score'], reverse=True)
+                # 점수 높은(우선권 있는) 사람이 A팀으로 스카우트됨
+                candidates.sort(key=lambda x: x['priority_score'], reverse=True)
                 best = candidates[0]
             else:
-                pool.sort(key=lambda x: x['current_round_score'], reverse=True)
+                pool.sort(key=lambda x: x['priority_score'], reverse=True)
                 best = pool[0] if pool else None
             
             if best:
@@ -486,21 +500,21 @@ def generate_vega_priority_schedule(df):
         team_a += selected_for_a
         team_b = rem_vegas + pool
         
-        # --- [포지션 배정] ---
-        final_team_a = assign_positions_in_team(team_a, history, fail_history, wait_history)
-        final_team_b = assign_positions_in_team(team_b, history, fail_history, wait_history)
+        # 5. 포지션 배정
+        final_team_a = assign_positions_in_team(team_a, last_pos_map)
+        final_team_b = assign_positions_in_team(team_b, last_pos_map)
         
-        # --- [기록 업데이트] ---
+        # 6. 결과 기록
+        new_last_pos_map = {p['이름']: None for p in players}
+        
         for p in final_team_a + final_team_b:
             name = p['이름']
-            match = p.get('match_type')
+            last_result_map[name] = p.get('match_type') # 결과 등급 저장
             
-            if match == 'wait':
-                wait_history[name] += 1
-            elif match == '1st':
-                history[name] += 1       # 성공! 다음 판 감점 (-500)
-            else:
-                fail_history[name] += 1  # 2,3순위나 랜덤 -> 실패! 다음 판 가산점 (+200)
+            if p.get('match_type') == '1st':
+                new_last_pos_map[name] = p['assigned_pos'] # 포지션 저장
+            
+        last_pos_map = new_last_pos_map
             
         final_rounds[round_num] = (final_team_a, final_team_b)
         
