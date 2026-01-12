@@ -21,19 +21,16 @@ ADMIN_PASSWORD = "1992"
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
     "2026.01.12": [
+        "🎨 라인업 공개 디자인 개선 (컬러 배지 적용)",
+        "📝 배정 알고리즘 용어 순화 (기여도 마일리지 등)",
+        "⚖️ 고생(기여) 마일리지 영구 누적 시스템 도입",
         "👥 인원수별(6~8인) 포지션 자동 조정 로직 적용",
-        "ℹ️ 라인업 공개 시 경기 인원 및 제외 포지션 안내",
-        "📢 노쇼(No-Show) 방지 및 필독 유의사항 추가",
-        "📞 관리자용 참가자 연락처 일괄 복사 기능",
-        "✅ '입금 확인' → '참가 확인'으로 용어 변경 (시범운영)",
-        "🔄 관리자 저장 시 데이터 즉시 반영(새로고침) 적용"
+        "ℹ️ 라인업 공개 시 경기 인원 및 제외 포지션 안내"
     ],
     "2025.01.03": [
-        "📊 포지션 경쟁률 표시 로직 수정 (6명=마감)",
         "📢 포지션 선택 주의사항 문구 추가",
         "📅 정식 출범 일정(월/수/금) 안내 추가",
-        "🔄 게임 개설 시 명단 자동 새로고침 적용",
-        "🤖 라인업 알고리즘 변경 (VEGA vs 픽업)"
+        "🔄 게임 개설 시 명단 자동 새로고침 적용"
     ]
 }
 
@@ -323,7 +320,7 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 점수 계산기 (고생 마일리지 누적 적용)
+# [NEW] 점수 계산기 (용어 순화 적용)
 def get_priority_score(player, global_history, global_hardship):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
@@ -331,31 +328,29 @@ def get_priority_score(player, global_history, global_hardship):
     score = 50.0 
     reasons = ["기본(50)"]
     
-    # 1. VEGA 우대
+    # 1. VEGA 우대 (용어: 우선권)
     if "[VEGA]" in name:
         score += 100.0
         reasons.append("+VEGA(100)")
         
-    # 2. 누적 1순위 성공 견제
+    # 2. 누적 1순위 배정 (용어: 배정누적)
     success_count = global_history.get(name, 0)
     if success_count > 0:
         penalty = success_count * 10.0
         score -= penalty
-        reasons.append(f"-성공{success_count}회({int(penalty)})")
+        reasons.append(f"-배정{success_count}회({int(penalty)})")
     
-    # 3. 고생 마일리지 (영구 누적)
+    # 3. 기여도 마일리지 (용어: 고생->기여 / 땜빵->임의)
     hardship_score = global_hardship.get(name, 0)
     if hardship_score > 0:
         score += hardship_score
-        reasons.append(f"+고생누적({int(hardship_score)})")
+        reasons.append(f"+마일리지({int(hardship_score)})")
         
-    # 동점 방지용 미세 랜덤 (0.00 ~ 0.99)
+    # 동점 방지용 미세 랜덤
     score += random.random()
     
     return score, " ".join(reasons)
 
-# [핵심 수정] 사람 중심 배정 (점수 높은 사람이 1,2,3순위 싹 훑고 지나감)
-# [핵심 수정] 1~3순위 전체 선호도 반영
 def assign_positions_in_team(team_members):
     # 초기화
     for p in team_members:
@@ -370,32 +365,27 @@ def assign_positions_in_team(team_members):
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # [수정된 로직] 8인(16명) 경기 시 포지션 결정 (1~3순위 모두 고려)
+    # 인원수에 따른 포지션 조정 (1~3순위 전체 선호도 반영)
     if team_size == 8:
-        cnt_fast = 0   # 속공 선호도 총합
-        cnt_cb = 0     # 센터백 선호도 총합
-        
+        cnt_fast = 0
+        cnt_cb = 0
         for p in team_members:
-            # 이 사람의 1, 2, 3순위를 모두 확인
             wishes = [str(p['1순위']), str(p['2순위']), str(p['3순위'])]
             for w in wishes:
                 if '속공' in w: cnt_fast += 1
                 if '센터백' in w: cnt_cb += 1
         
-        # 더 인기 있는 포지션을 살림 (동점이면 공격적인 '속공' 우선)
-        if cnt_fast >= cnt_cb: 
-            current_quotas['센터백'] = 0 # 센터백 닫음
-        else: 
-            current_quotas['속공'] = 0   # 속공 닫음
+        if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
+        else: current_quotas['속공'] = 0
 
     elif team_size == 7:
         for pos in ['속공', '센터백']: current_quotas[pos] = 0
     elif team_size == 6:
         for pos in ['속공', '센터백', '백차']: current_quotas[pos] = 0
             
-    # 3. 단계별 배정 (점수 높은 사람이 1->2->3순위 우선권 가짐)
+    # 3. 단계별 배정 (사람 중심: 점수 높은 사람이 1->2->3순위 선점)
     for p in team_members:
-        # (Step 1) 1순위 시도
+        # (Step 1) 1순위
         pos1 = str(p['1순위']).strip()
         if current_quotas.get(pos1, 0) > 0:
             p['assigned_pos'] = pos1
@@ -404,7 +394,7 @@ def assign_positions_in_team(team_members):
             p['got_1st'] = True
             continue 
 
-        # (Step 2) 2순위 시도
+        # (Step 2) 2순위
         pos2 = p['2순위']
         if pos2: pos2 = str(pos2).strip()
         if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
@@ -413,7 +403,7 @@ def assign_positions_in_team(team_members):
             p['match_type'] = '2nd'
             continue 
 
-        # (Step 3) 3순위 시도
+        # (Step 3) 3순위
         pos3 = p['3순위']
         if pos3: pos3 = str(pos3).strip()
         if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
@@ -422,7 +412,7 @@ def assign_positions_in_team(team_members):
             p['match_type'] = '3rd'
             continue 
             
-    # (Step 4) 무작위 (빈자리 채우기)
+    # (Step 4) 무작위
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
@@ -455,7 +445,7 @@ def generate_vega_priority_schedule(df):
             p['priority_score'] = score
             p['score_reason'] = reason
 
-        # 2. 정렬 (점수 순)
+        # 2. 정렬
         current_players.sort(key=lambda x: x['priority_score'], reverse=True)
         
         # 3. 팀 나누기
@@ -501,22 +491,20 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 및 마일리지 적립
+        # 7. 기록 및 마일리지 적립 (용어 통일)
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
             
-            # 성공 횟수 증가
             if match_type == '1st':
                 global_history[name] += 1
                 
-            # 고생 마일리지 적립
             if match_type == 'wait':
-                global_hardship[name] += 10
+                global_hardship[name] += 10 # 대기 +10
             elif match_type == '3rd':
-                global_hardship[name] += 5
+                global_hardship[name] += 5  # 3순위 +5
             elif match_type == '2nd' or match_type == 'random':
-                global_hardship[name] += 3
+                global_hardship[name] += 3  # 2순위/무작위 +3
 
         final_rounds[round_num] = (final_team_a, final_team_b)
         
@@ -546,11 +534,8 @@ with st.sidebar:
     
     st.divider()
     
-    # [수정] 문의하기 섹션 (링크 적용)
     st.markdown("### 📞 문의하기")
-    # 아래 링크를 클릭하면 새 창으로 오픈채팅방이 열립니다.
     st.markdown("💬 [**오픈채팅방 입장 (클릭)**](https://open.kakao.com/o/gf1s6t9h)")
-    # 소리함 탭 이동 기능은 Streamlit 미지원이므로 안내 문구로 대체
     st.caption("🗣️ **소리함**: 우측 상단 '소리함' 탭을 이용해주세요.")
     
     if get_sheet_instance(SHEET_APPLICANTS):
@@ -639,7 +624,6 @@ with tab1:
                     - **최상급**: 전국대회 최상위권, 선출 준하는 실력
                     """)
                 
-                # VEGA 체크박스
                 is_vega = st.checkbox("순천VEGA 회원 (우선권)")
                 
                 lc1, lc2 = st.columns([2, 1])
@@ -648,7 +632,6 @@ with tab1:
                 
                 st.markdown("---")
                 
-                # [수정] 포지션 선택 안내 문구 추가
                 st.info("📢 **주의:** 1순위 마감 시 2·3순위가 없으면 **임의 배정**되거나 **대기**로 밀릴 수 있습니다. (2·3순위 필수 아님, 권장)")
                 
                 p1, p2, p3 = st.columns(3)
@@ -690,7 +673,6 @@ with tab1:
                 cols = st.columns(4)
                 for idx, (pos, count) in enumerate(counts.items()):
                     with cols[idx % 4]:
-                        # [수정] 경쟁률 표시 로직
                         if count > MAX_SLOTS: 
                             st.metric(label=pos, value=f"{count}명", delta="초과!", delta_color="inverse")
                         elif count == MAX_SLOTS:
@@ -701,7 +683,6 @@ with tab1:
             st.divider()
             st.markdown("##### 📋 신청자 명단")
             if '입금' not in df_public.columns: df_public['입금'] = "X"
-            # [수정] 입금완료 -> 참가확인
             df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 참가확인" if str(x).strip().upper() == "O" else "-")
             
             if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
@@ -712,7 +693,6 @@ with tab1:
             show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
             real_cols = [c for c in show_cols if c in df_public.columns]
             st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True)
-            # [추가] 노쇼 방지 안내 문구
             st.caption("📢 **유의사항:** 참가 확정 후 불참 시에는 꼭 **[신청 취소]**를 해주세요. \n"
                        "연락 없이 불참(No-Show)하는 경우가 반복되면, 원활한 운영을 위해 **향후 참가 신청이 제한**될 수 있습니다.")
         else: st.info("아직 신청자가 없습니다.")
@@ -720,11 +700,25 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    with st.expander("📘 이용 가이드: 라인업 보는 법", expanded=False):
+    # [NEW] 공개 화면에도 배정 기준(순화된 용어) 안내
+    with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
         st.markdown("""
-        - **팀 확인**: A팀(🔴)과 B팀(🔵)으로 나뉩니다.
-        - **아이콘**: 1️⃣(1순위), 2️⃣(2순위), 3️⃣(3순위), 🎲(무작위)
-        """)
+        **1. 배정 기준 (우선순위 점수제)**
+        | 항목 | 점수 | 설명 |
+        | :--- | :--- | :--- |
+        | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
+        | **VEGA 회원** | `+100점` | 1부 리그(VEGA) **우선권 부여** |
+        | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
+        | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
+
+        **2. 화면 보는 법**
+        - **팀 확인**: A팀(🔴) / B팀(🔵)
+        - **아이콘**: 
+            - <span style='color:#1565C0; background-color:#E3F2FD; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span> : 1순위 희망 포지션 배정
+            - <span style='color:#2E7D32; background-color:#E8F5E9; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span> : 2순위 희망 포지션 배정
+            - <span style='color:#E65100; background-color:#FFF3E0; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span> : 3순위 희망 포지션 배정
+            - <span style='color:#C62828; background-color:#FFEBEE; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span> : 무작위(임의) 배정
+        """, unsafe_allow_html=True)
 
     st.header("📋 이번 주 라인업")
     data_final = load_applicants()
@@ -740,7 +734,6 @@ with tab2:
                 if col_pos in df_final.columns:
                     playing = df_final[df_final[col_pos] != '']
                     if not playing.empty:
-                        # 경기 정보 표시
                         real_players = playing[playing[col_pos] != "대기"]
                         if not real_players.empty:
                             count_a = len(real_players[real_players[col_team]=="A팀"])
@@ -752,25 +745,26 @@ with tab2:
                             if missing: info_msg += f" (제외: {', '.join(missing)})"
                             st.info(info_msg)
 
-                        # 아이콘 결정 함수
-                        def get_icon(row, pos_col):
+                        # [NEW] 공개 화면용 컬러 배지 함수
+                        def get_badge(row, pos_col):
                             current = row[pos_col]
-                            if current == row['1순위']: return "1️⃣"
-                            elif current == row['2순위']: return "2️⃣"
-                            elif current == row['3순위']: return "3️⃣"
-                            else: return "🎲"
+                            # match_type 정보가 없으므로 1,2,3순위 비교로 추론
+                            if current == row['1순위']: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
+                            elif current == row['2순위']: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
+                            elif current == row['3순위']: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
+                            else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
 
                         c1, c2 = st.columns(2)
                         with c1:
                             st.error("🔴 A팀 (VEGA)")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
-                                icon = get_icon(r, col_pos)
-                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
+                                badge = get_badge(r, col_pos)
+                                st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r['1순위']})", unsafe_allow_html=True)
                         with c2:
                             st.info("🔵 B팀 (픽업)")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
-                                icon = get_icon(r, col_pos)
-                                st.write(f"- **{r[col_pos]}**: {r['이름_masked']} ({icon} {r['1순위']})")
+                                badge = get_badge(r, col_pos)
+                                st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r['1순위']})", unsafe_allow_html=True)
                         st.markdown("---")
                         bench = playing[playing[col_pos]=="대기"]
                         if not bench.empty:
@@ -792,12 +786,10 @@ with tab3:
                 clean_phone = normalize_phone(my_phone)
                 cur_apps = load_applicants()
                 
-                # VEGA 태그 고려한 검색
                 my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
                 
                 st.subheader("📍 현재 신청 상태")
                 if my_cur:
-                    # [수정] 입금완료 -> 참가확인
                     status = "✅ 참가확인" if str(my_cur[0].get('입금')).upper() == 'O' else "미확인"
                     st.success(f"신청 확인됨! (상태: {status})")
                     st.dataframe(pd.DataFrame(my_cur)[['이름', '1순위', '레벨']], hide_index=True)
@@ -922,18 +914,18 @@ with tab6:
     
     if st.session_state['lineup_admin_logged_in']:
         
-        # [NEW] 업데이트된 점수 계산 규칙
+        # [NEW] 업데이트된 점수 계산 규칙 (순화된 용어 적용)
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
             | 항목 | 점수 | 설명 |
             | :--- | :--- | :--- |
             | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
-            | **VEGA 회원** | `+100점` | 1부 리그 우대 |
-            | **성공 견제** | `-10점`/회 | 1순위 성공 횟수만큼 누적 감점 |
-            | **고생 마일리지** | **누적** | **한번 얻은 고생 점수는 사라지지 않음!** |
-            | └ 대기 | `+10점` | 쉬었으면 마일리지 대폭 적립 |
-            | └ 3순위 | `+5점` | 원치 않는 포지션 마일리지 적립 |
-            | └ 땜빵 | `+3점` | 2순위/무작위 마일리지 적립 |
+            | **VEGA 회원** | `+100점` | 1부 리그(VEGA) **우선권 부여** |
+            | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
+            | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
+            | └ 대기 | `+10점` | 쉬었으면 확실한 우선권 부여 |
+            | └ 3순위 | `+5점` | 원하지 않는 포지션 배정 시 마일리지 적립 |
+            | └ 임의/2순위 | `+3점` | 2순위 또는 임의(무작위) 배정 시 마일리지 적립 |
             """)
 
         data = load_applicants()
@@ -974,6 +966,7 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
+                        # 아이콘 배지 (글자+색상) - 관리자용
                         def get_admin_badge(p):
                             m = p.get('match_type')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
@@ -982,7 +975,6 @@ with tab6:
                             else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
 
                         def get_score_display(p):
-                            # [수정] 소수점 2자리까지 표시 (:.2f)
                             return f"[점수: {p['priority_score']:.2f} | {p.get('score_reason', '')}]"
 
                         real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
@@ -1020,6 +1012,7 @@ with tab6:
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
                 final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
+
 # --- 탭 7: 관리자 ---
 with tab7:
     st.header("관리자 메뉴")
@@ -1052,14 +1045,13 @@ with tab7:
                 hide_index=True
             )
             
-            # [수정] 저장 후 새로고침 (즉시 반영)
             if st.button("참가 현황 저장"):
                 df_manage.update(edited_manage)
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
                 st.success("저장되었습니다.")
-                time.sleep(1.0) # 잠시 대기 후
-                st.rerun()      # 새로고침!
+                time.sleep(1.0)
+                st.rerun()
         else: st.info("신청자 없음")
 
         st.divider()
