@@ -986,13 +986,13 @@ with tab6:
                             for p in team_a: 
                                 if p['assigned_pos']!="대기":
                                     icon = get_admin_icon(p)
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']}) [점수: {p['priority_score']:.1f}]")
                         with c2: 
                             st.info("🔵 B팀 (픽업)")
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": 
                                     icon = get_admin_icon(p)
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']}) [점수: {p['priority_score']:.1f}]")
                         
                         # 대기 인원
                         st.markdown("---")
