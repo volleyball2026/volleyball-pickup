@@ -323,34 +323,40 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (합리적 경쟁 유도)
-def get_priority_score(player, last_result_map, last_pos_map):
+# [NEW] 우선순위 점수 계산기 (가독성 좋은 점수제)
+def get_priority_score(player, last_result_map, last_pos_map, global_history):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
-    score = 1000.0
     
-    # 1. VEGA 우대
+    # 1. 기본 점수 (10점 만점 기준)
+    score = 10.0
+    
+    # 2. VEGA 우대 (100점 단위로 티어 구분)
     if "[VEGA]" in name:
-        score += 100000
+        score += 100.0
         
-    # 2. 한풀이 (직전 결과에 따른 보상)
-    last_res = last_result_map.get(name)
-    if last_res == 'wait': score += 500      # 대기했으면 최우선
-    elif last_res == '3rd': score += 300     # 3순위 밀렸으면 우선
-    elif last_res == '2nd': score += 200     # 2순위 양보했으면 우선
-    elif last_res == 'random': score += 200  # 땜빵했으면 우선
-    elif last_res == '1st': score -= 500     # 1순위 했으면 양보할 차례
+    # 3. [핵심] 누적 1순위 성공 횟수 견제
+    # 1번 해먹을 때마다 -10점씩 깎임
+    # (예: 1번 한 사람 = 0점, 안 한 사람 = 10점 -> 안 한 사람이 이김)
+    success_count = global_history.get(name, 0)
+    score -= (success_count * 10.0)
     
-    # 3. 연속 배정 페널티 (경쟁 시에만 밀리도록 설정)
+    # 4. 한풀이 (직전 라운드 고생 보너스)
+    last_res = last_result_map.get(name)
+    if last_res == 'wait': score += 5.0      # 대기: +5점
+    elif last_res == '3rd': score += 3.0     # 3순위: +3점
+    elif last_res == '2nd': score += 2.0     # 2순위: +2점
+    elif last_res == 'random': score += 2.0  # 땜빵: +2점
+    elif last_res == '1st': score -= 5.0     # 1순위: -5점 (양보)
+    
+    # 5. 연속 배정 페널티 (직전과 같으면 감점)
     last_pos = last_pos_map.get(name)
     if last_pos: last_pos = str(last_pos).strip()
     
     if last_pos == target_pos:
-        # -500점 감점:
-        # 경쟁자(1000점)가 있으면 짐 (1000 vs 500) -> 양보
-        # 경쟁자 없으면(0점) 이김 (500 vs 0) -> 연임
-        score -= 500 
+        score -= 5.0 # 경쟁 시 밀려나도록 유도
         
+    # 동점 방지용 미세 랜덤 (0.0 ~ 0.9)
     score += random.random()
     return score
 
@@ -368,7 +374,6 @@ def assign_positions_in_team(team_members):
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # 인원수에 따른 포지션 제외
     if team_size == 8:
         cnt_fast = sum(1 for p in team_members if '속공' in str(p['1순위']))
         cnt_cb = sum(1 for p in team_members if '센터백' in str(p['1순위']))
@@ -385,14 +390,13 @@ def assign_positions_in_team(team_members):
     for p in team_members:
         pos = str(p['1순위']).strip()
         
-        # [수정] 강제 차단 없이, 점수 순서대로 자리가 있으면 배정
         if current_quotas.get(pos, 0) > 0:
             p['assigned_pos'] = pos
             current_quotas[pos] -= 1
             p['match_type'] = '1st'
             p['got_1st'] = True
         else:
-            p['got_1st'] = False # 점수 밀려서 탈락
+            p['got_1st'] = False
             
     # (Step 2) 2순위
     for p in team_members:
@@ -414,7 +418,7 @@ def assign_positions_in_team(team_members):
                 current_quotas[pos] -= 1
                 p['match_type'] = '3rd'
                 
-    # (Step 4) 무작위 (빈자리 채우기)
+    # (Step 4) 무작위
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
@@ -432,8 +436,10 @@ def assign_positions_in_team(team_members):
     return team_members
 
 def generate_vega_priority_schedule(df):
-    # 원본 데이터 보존
     base_players = df.to_dict('records')
+    
+    # 누적 기록 (오늘 1순위 몇 번 했나)
+    global_history = {p['이름']: 0 for p in base_players}
     
     last_result_map = {p['이름']: None for p in base_players} 
     last_pos_map = {p['이름']: None for p in base_players}    
@@ -441,21 +447,19 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # [핵심] 데이터 격리 (Deep Copy) 🛡️
-        # 매 라운드마다 명단을 새로 복사해서 사용 -> 기록 덮어쓰기 문제 완벽 해결
+        # [핵심] 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산
+        # 1. 점수 계산 (누적 기록 반영)
         for p in current_players:
-            p['priority_score'] = get_priority_score(p, last_result_map, last_pos_map)
+            p['priority_score'] = get_priority_score(p, last_result_map, last_pos_map, global_history)
 
-        # 2. VEGA / 픽업 분리
+        # 2. 정렬
+        current_players.sort(key=lambda x: x['priority_score'], reverse=True)
+        
+        # 3. 팀 나누기 (VEGA 우선)
         vegas = [p for p in current_players if "[VEGA]" in p['이름']]
         pickups = [p for p in current_players if "[VEGA]" not in p['이름']]
-        
-        # 3. 정렬 (점수 높은 순)
-        vegas.sort(key=lambda x: x['priority_score'], reverse=True)
-        pickups.sort(key=lambda x: x['priority_score'], reverse=True)
         
         team_size = len(base_players) // 2
         
@@ -496,17 +500,19 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 업데이트 (다음 라운드 페널티 적용용)
-        # 매 라운드마다 새로운 맵을 만들어서 기록 (격리 유지)
+        # 7. 기록 업데이트
         new_last_pos_map = {p['이름']: None for p in base_players}
         
         for p in final_team_a + final_team_b:
             name = p['이름']
             last_result_map[name] = p.get('match_type')
             
-            # 1순위든 땜빵이든 실제로 뛴 포지션을 기록
             if p['assigned_pos'] and p['assigned_pos'] != "대기":
                 new_last_pos_map[name] = str(p['assigned_pos']).strip()
+                
+            # 누적 1순위 횟수 증가
+            if p.get('match_type') == '1st':
+                global_history[name] += 1 
 
         last_pos_map = new_last_pos_map
             
