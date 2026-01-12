@@ -323,7 +323,7 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 점수 계산기 (변별력 강화 & 신청 패널티 삭제)
+# [NEW] 점수 계산기 (사용자 지정 점수표 적용)
 def get_priority_score(player, last_result_map, last_pos_map, global_history):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
@@ -336,36 +336,41 @@ def get_priority_score(player, last_result_map, last_pos_map, global_history):
         score += 100.0
         reasons.append("+VEGA(100)")
         
-    # 2. 누적 1순위 성공 횟수 견제 (실제 해본 사람만 감점!)
+    # 2. 누적 1순위 성공 횟수 견제
+    # (이미 여기서 10점이 깎이므로, 아래에서 또 깎을 필요 없음)
     success_count = global_history.get(name, 0)
     if success_count > 0:
         penalty = success_count * 10.0
         score -= penalty
         reasons.append(f"-누적{success_count}회({int(penalty)})")
     
-    # 3. 한풀이 (직전 라운드 고생 보너스 - 점수 상향)
+    # 3. 한풀이 (직전 라운드 고생 보너스 - 점수 대폭 상향)
     last_res = last_result_map.get(name)
+    
     if last_res == 'wait': 
         score += 10.0
-        reasons.append("+직전대기(10)")
+        reasons.append("+직전대기(10)") # 확실한 우대
+        
     elif last_res == '3rd': 
         score += 5.0
-        reasons.append("+직전3순위(5)")
+        reasons.append("+직전3순위(5)") # 원치 않는 포지션 보상
+        
     elif last_res == '2nd': 
         score += 3.0
-        reasons.append("+직전2순위(3)")
+        reasons.append("+직전2순위(3)") # 차선책 보상
+        
     elif last_res == 'random': 
         score += 3.0
-        reasons.append("+직전땜빵(3)")
-    elif last_res == '1st': 
-        score -= 5.0
-        reasons.append("-직전1순위(5)")
+        reasons.append("+직전땜빵(3)") # 땜빵 보상
     
-    # [완전 삭제] 연속 신청 패널티 (독점방지)
-    # 이제 같은 포지션을 신청해도 감점되지 않습니다.
+    # [삭제] '직전 1순위 -5점' 삭제
+    # 이유: 위쪽 '누적 횟수'에서 이미 -10점을 했기 때문에 이중 감점 방지
+    
+    # [삭제] 연속 신청(독점방지) 패널티 삭제
+    # 신청은 자유, 결과(누적)로만 평가
         
     # 동점 방지용 미세 랜덤 (0.0 ~ 0.99)
-    # 점수 간격이 3점 이상이므로 랜덤 때문에 순위가 뒤집히지 않음
+    # 이제 보너스 최소 단위가 3점이므로 랜덤 때문에 억울하게 뒤집힐 일 없음
     score += random.random()
     
     return score, " ".join(reasons)
@@ -456,7 +461,7 @@ def generate_vega_priority_schedule(df):
         # 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산 (점수와 사유를 함께 받아옴)
+        # 1. 점수 계산
         for p in current_players:
             score, reason = get_priority_score(p, last_result_map, last_pos_map, global_history)
             p['priority_score'] = score
