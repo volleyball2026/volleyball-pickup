@@ -20,12 +20,17 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
-    "2026.01.12": [
-        "🎨 라인업 공개 디자인 개선 (컬러 배지 적용)",
-        "📝 배정 알고리즘 용어 순화 (기여도 마일리지 등)",
-        "⚖️ 고생(기여) 마일리지 영구 누적 시스템 도입",
-        "👥 인원수별(6~8인) 포지션 자동 조정 로직 적용",
-        "ℹ️ 라인업 공개 시 경기 인원 및 제외 포지션 안내"
+    "2026.01.12 (Ver 2.0)": [
+        "🎨 [디자인] 라인업 공개 화면 컬러 배지 적용",
+        "📝 [용어] 땜빵→임의, 고생→기여도 등으로 순화",
+        "⚖️ [로직] 기여도 마일리지 영구 누적제 도입",
+        "👥 [로직] 인원수(6~8인)에 따른 포지션 자동 조정",
+        "ℹ️ [안내] 공개 화면에 점수 계산표 추가"
+    ],
+    "2026.01.08": [
+        "🧹 [점수] 독점방지(신청 패널티) 삭제",
+        "📈 [점수] 2·3순위/대기 배정 시 가산점 상향",
+        "🛑 [기능] 마이너스 점수 방지 (기본점 50점)"
     ],
     "2025.01.03": [
         "📢 포지션 선택 주의사항 문구 추가",
@@ -527,10 +532,16 @@ st.markdown("""
 
 with st.sidebar:
     st.header("📢 Update Log")
+    
+    # [수정] 글씨 크기(12px)와 줄 간격을 줄여서 한눈에 보이게 변경
     for date, logs in UPDATE_LOGS.items():
         with st.expander(date):
+            # HTML을 사용하여 스타일 직접 적용
+            content_html = "<ul style='font-size: 13px; padding-left: 15px; margin: 0; line-height: 1.4; color: #404040;'>"
             for log in logs:
-                st.write(f"- {log}")
+                content_html += f"<li style='margin-bottom: 4px;'>{log}</li>"
+            content_html += "</ul>"
+            st.markdown(content_html, unsafe_allow_html=True)
     
     st.divider()
     
