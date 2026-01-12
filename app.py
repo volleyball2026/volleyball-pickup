@@ -323,7 +323,7 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 점수 계산기 (신청은 자유, 결과는 공정하게)
+# [NEW] 점수 계산기 (변별력 강화 & 신청 패널티 삭제)
 def get_priority_score(player, last_result_map, last_pos_map, global_history):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
@@ -343,28 +343,29 @@ def get_priority_score(player, last_result_map, last_pos_map, global_history):
         score -= penalty
         reasons.append(f"-누적{success_count}회({int(penalty)})")
     
-    # 3. 한풀이 (직전 라운드 고생 보너스)
+    # 3. 한풀이 (직전 라운드 고생 보너스 - 점수 상향)
     last_res = last_result_map.get(name)
     if last_res == 'wait': 
-        score += 5.0
-        reasons.append("+직전대기(5)")
+        score += 10.0
+        reasons.append("+직전대기(10)")
     elif last_res == '3rd': 
-        score += 3.0
-        reasons.append("+직전3순위(3)")
+        score += 5.0
+        reasons.append("+직전3순위(5)")
     elif last_res == '2nd': 
-        score += 2.0
-        reasons.append("+직전2순위(2)")
+        score += 3.0
+        reasons.append("+직전2순위(3)")
     elif last_res == 'random': 
-        score += 2.0
-        reasons.append("+직전땜빵(2)")
+        score += 3.0
+        reasons.append("+직전땜빵(3)")
     elif last_res == '1st': 
         score -= 5.0
         reasons.append("-직전1순위(5)")
     
-    # [삭제됨] 연속 신청 패널티 (독점방지) 삭제!
-    # 신청은 자유입니다. 많이 해먹은 사람은 위쪽 '누적 횟수'에서 이미 점수가 깎였습니다.
+    # [완전 삭제] 연속 신청 패널티 (독점방지)
+    # 이제 같은 포지션을 신청해도 감점되지 않습니다.
         
-    # 동점 방지용 미세 랜덤
+    # 동점 방지용 미세 랜덤 (0.0 ~ 0.99)
+    # 점수 간격이 3점 이상이므로 랜덤 때문에 순위가 뒤집히지 않음
     score += random.random()
     
     return score, " ".join(reasons)
@@ -455,7 +456,7 @@ def generate_vega_priority_schedule(df):
         # 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산
+        # 1. 점수 계산 (점수와 사유를 함께 받아옴)
         for p in current_players:
             score, reason = get_priority_score(p, last_result_map, last_pos_map, global_history)
             p['priority_score'] = score
