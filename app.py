@@ -323,12 +323,12 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 점수 계산기 (상세 사유 리턴 추가)
+# [NEW] 점수 계산기 (신청은 자유, 결과는 공정하게)
 def get_priority_score(player, last_result_map, last_pos_map, global_history):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
     
-    score = 50.0 # 마이너스 방지를 위한 기본점수 상향
+    score = 50.0 
     reasons = ["기본(50)"]
     
     # 1. VEGA 우대
@@ -336,7 +336,7 @@ def get_priority_score(player, last_result_map, last_pos_map, global_history):
         score += 100.0
         reasons.append("+VEGA(100)")
         
-    # 2. 누적 1순위 성공 횟수 견제 (1회당 -10점)
+    # 2. 누적 1순위 성공 횟수 견제 (실제 해본 사람만 감점!)
     success_count = global_history.get(name, 0)
     if success_count > 0:
         penalty = success_count * 10.0
@@ -361,13 +361,8 @@ def get_priority_score(player, last_result_map, last_pos_map, global_history):
         score -= 5.0
         reasons.append("-직전1순위(5)")
     
-    # 4. 연속 배정 페널티 (직전과 같으면 감점)
-    last_pos = last_pos_map.get(name)
-    if last_pos: last_pos = str(last_pos).strip()
-    
-    if last_pos == target_pos:
-        score -= 5.0
-        reasons.append("-연속신청(5)")
+    # [삭제됨] 연속 신청 패널티 (독점방지) 삭제!
+    # 신청은 자유입니다. 많이 해먹은 사람은 위쪽 '누적 횟수'에서 이미 점수가 깎였습니다.
         
     # 동점 방지용 미세 랜덤
     score += random.random()
@@ -460,7 +455,7 @@ def generate_vega_priority_schedule(df):
         # 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산 (점수와 사유를 함께 받아옴)
+        # 1. 점수 계산
         for p in current_players:
             score, reason = get_priority_score(p, last_result_map, last_pos_map, global_history)
             p['priority_score'] = score
@@ -926,6 +921,19 @@ with tab6:
                     st.error("비밀번호 불일치")
     
     if st.session_state['lineup_admin_logged_in']:
+        
+        # [NEW] 점수 계산 규칙 (독점방지 삭제됨)
+        with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
+            st.markdown("""
+            | 항목 | 점수 | 설명 |
+            | :--- | :--- | :--- |
+            | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
+            | **VEGA 회원** | `+100점` | 1부 리그 우대 |
+            | **누적 1순위** | `-10점`/회 | 오늘 1순위를 많이 해본 사람은 양보 유도 |
+            | **직전 대기** | `+5점` | 쉬었으면 우선권 부여 |
+            | **직전 땜빵** | `+2점` | 2·3순위/무작위 했으면 소폭 우대 |
+            """)
+
         data = load_applicants()
         if not data: st.warning("참가자 없음")
         else:
@@ -943,7 +951,6 @@ with tab6:
                     st.success("완료!")
                     
             if 'fair_results' in st.session_state:
-                # 데이터 저장용 처리
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
@@ -960,23 +967,21 @@ with tab6:
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
-                # 화면 표시
                 r_tabs = st.tabs(["1·2", "3·4", "5·6"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        def get_admin_icon(p):
+                        # [NEW] 확실한 색깔 배지 아이콘 (글자+색상)
+                        def get_admin_badge(p):
                             m = p.get('match_type')
-                            if m == '1st': return "1️⃣"
-                            elif m == '2nd': return "2️⃣"
-                            elif m == '3rd': return "3️⃣"
-                            else: return "🎲"
+                            # 1순위: 파랑, 무작위: 빨강(글자 '무')
+                            if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
+                            elif m == '2nd': return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
+                            elif m == '3rd': return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
+                            else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
 
-                        # [점수 및 사유 표시용 함수]
                         def get_score_display(p):
-                            # 점수는 소수점 1자리, 사유는 괄호 안에
-                            # ex: [점수: 145.2 | 기본(50) +VEGA(100) ...]
                             return f"[점수: {p['priority_score']:.1f} | {p.get('score_reason', '')}]"
 
                         real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
@@ -990,16 +995,15 @@ with tab6:
                             st.error("🔴 A팀 (VEGA)")
                             for p in team_a: 
                                 if p['assigned_pos']!="대기":
-                                    icon = get_admin_icon(p)
-                                    # 이름 옆에 상세 점수 내역 표시
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    badge = get_admin_badge(p)
+                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} ({p['1순위']})", unsafe_allow_html=True)
                                     st.caption(f"└ {get_score_display(p)}")
                         with c2: 
                             st.info("🔵 B팀 (픽업)")
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": 
-                                    icon = get_admin_icon(p)
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    badge = get_admin_badge(p)
+                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} ({p['1순위']})", unsafe_allow_html=True)
                                     st.caption(f"└ {get_score_display(p)}")
                         
                         st.markdown("---")
