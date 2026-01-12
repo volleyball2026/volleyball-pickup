@@ -323,8 +323,8 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 점수 계산기 (사용자 지정 점수표 적용)
-def get_priority_score(player, last_result_map, last_pos_map, global_history):
+# [NEW] 점수 계산기 (고생 마일리지 누적 적용)
+def get_priority_score(player, global_history, global_hardship):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
     
@@ -336,41 +336,22 @@ def get_priority_score(player, last_result_map, last_pos_map, global_history):
         score += 100.0
         reasons.append("+VEGA(100)")
         
-    # 2. 누적 1순위 성공 횟수 견제
-    # (이미 여기서 10점이 깎이므로, 아래에서 또 깎을 필요 없음)
+    # 2. 누적 1순위 성공 견제 (성공 1회당 -10점)
+    # (성공하면 점수가 깎이지만, 쌓아둔 고생 마일리지는 그대로 남음 -> 상쇄 효과)
     success_count = global_history.get(name, 0)
     if success_count > 0:
         penalty = success_count * 10.0
         score -= penalty
-        reasons.append(f"-누적{success_count}회({int(penalty)})")
+        reasons.append(f"-성공{success_count}회({int(penalty)})")
     
-    # 3. 한풀이 (직전 라운드 고생 보너스 - 점수 대폭 상향)
-    last_res = last_result_map.get(name)
-    
-    if last_res == 'wait': 
-        score += 10.0
-        reasons.append("+직전대기(10)") # 확실한 우대
+    # 3. [핵심] 고생 마일리지 (영구 누적)
+    # 직전 라운드 결과가 아니라, 오늘 하루 쌓인 총 고생 점수를 더함
+    hardship_score = global_hardship.get(name, 0)
+    if hardship_score > 0:
+        score += hardship_score
+        reasons.append(f"+고생누적({int(hardship_score)})")
         
-    elif last_res == '3rd': 
-        score += 5.0
-        reasons.append("+직전3순위(5)") # 원치 않는 포지션 보상
-        
-    elif last_res == '2nd': 
-        score += 3.0
-        reasons.append("+직전2순위(3)") # 차선책 보상
-        
-    elif last_res == 'random': 
-        score += 3.0
-        reasons.append("+직전땜빵(3)") # 땜빵 보상
-    
-    # [삭제] '직전 1순위 -5점' 삭제
-    # 이유: 위쪽 '누적 횟수'에서 이미 -10점을 했기 때문에 이중 감점 방지
-    
-    # [삭제] 연속 신청(독점방지) 패널티 삭제
-    # 신청은 자유, 결과(누적)로만 평가
-        
-    # 동점 방지용 미세 랜덤 (0.0 ~ 0.99)
-    # 이제 보너스 최소 단위가 3점이므로 랜덤 때문에 억울하게 뒤집힐 일 없음
+    # 동점 방지용 미세 랜덤 (0.00 ~ 0.99)
     score += random.random()
     
     return score, " ".join(reasons)
@@ -452,18 +433,20 @@ def assign_positions_in_team(team_members):
 
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
-    global_history = {p['이름']: 0 for p in base_players}
-    last_result_map = {p['이름']: None for p in base_players} 
-    last_pos_map = {p['이름']: None for p in base_players}    
+    
+    # [상태 저장소]
+    global_history = {p['이름']: 0 for p in base_players} # 1순위 성공 횟수 (감점용)
+    global_hardship = {p['이름']: 0 for p in base_players} # 고생 마일리지 (가산점용, 영구 누적)
+    
     final_rounds = {}
 
     for round_num in range(1, 4):
         # 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산
+        # 1. 점수 계산 (누적된 마일리지 반영)
         for p in current_players:
-            score, reason = get_priority_score(p, last_result_map, last_pos_map, global_history)
+            score, reason = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = score
             p['score_reason'] = reason
 
@@ -513,17 +496,24 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 업데이트
-        new_last_pos_map = {p['이름']: None for p in base_players}
+        # 7. 기록 및 마일리지 적립 (다음 라운드용)
         for p in final_team_a + final_team_b:
             name = p['이름']
-            last_result_map[name] = p.get('match_type')
-            if p['assigned_pos'] and p['assigned_pos'] != "대기":
-                new_last_pos_map[name] = str(p['assigned_pos']).strip()
-            if p.get('match_type') == '1st':
-                global_history[name] += 1 
+            match_type = p.get('match_type')
+            
+            # (1) 1순위 성공 시 -> 성공 횟수 증가 (감점 요인)
+            if match_type == '1st':
+                global_history[name] += 1
+                
+            # (2) 고생 마일리지 적립 (가산점 요인 - 영구 누적)
+            # 한번 쌓이면 사라지지 않고 계속 남아서 1순위 경쟁에 도움을 줌
+            if match_type == 'wait':
+                global_hardship[name] += 10 # 대기: +10점
+            elif match_type == '3rd':
+                global_hardship[name] += 5  # 3순위: +5점
+            elif match_type == '2nd' or match_type == 'random':
+                global_hardship[name] += 3  # 2순위/땜빵: +3점
 
-        last_pos_map = new_last_pos_map
         final_rounds[round_num] = (final_team_a, final_team_b)
         
     return final_rounds
@@ -935,10 +925,11 @@ with tab6:
             | :--- | :--- | :--- |
             | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
             | **VEGA 회원** | `+100점` | 1부 리그 우대 |
-            | **누적 1순위** | `-10점`/회 | 오늘 1순위를 많이 해본 사람은 양보 유도 |
-            | **직전 대기** | `+10점` | 쉬었으면 확실한 우선권 부여 |
-            | **직전 3순위** | `+5점` | 원하지 않는 포지션 했으면 우대 |
-            | **직전 땜빵** | `+3점` | 2순위 또는 무작위 배정 시 우대 |
+            | **성공 견제** | `-10점`/회 | 1순위 성공 횟수만큼 누적 감점 |
+            | **고생 마일리지** | **누적** | **한번 얻은 고생 점수는 사라지지 않음!** |
+            | └ 대기 | `+10점` | 쉬었으면 마일리지 대폭 적립 |
+            | └ 3순위 | `+5점` | 원치 않는 포지션 마일리지 적립 |
+            | └ 땜빵 | `+3점` | 2순위/무작위 마일리지 적립 |
             """)
 
         data = load_applicants()
@@ -979,7 +970,6 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 아이콘 배지 (글자+색상)
                         def get_admin_badge(p):
                             m = p.get('match_type')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
@@ -988,7 +978,8 @@ with tab6:
                             else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
 
                         def get_score_display(p):
-                            return f"[점수: {p['priority_score']:.1f} | {p.get('score_reason', '')}]"
+                            # [수정] 소수점 2자리까지 표시 (:.2f)
+                            return f"[점수: {p['priority_score']:.2f} | {p.get('score_reason', '')}]"
 
                         real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
                         if real_players:
