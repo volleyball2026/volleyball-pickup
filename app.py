@@ -20,12 +20,13 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
-    "2026.01.12 (Ver 2.0)": [
+    "2026.01.12 (Ver 2.1)": [
+        "⚖️ [로직] **'노력형 불운' 보너스** 추가 (1·2·3순위 작성자 우대)",
         "🎨 [디자인] 라인업 공개 화면 컬러 배지 적용",
         "📝 [용어] 땜빵→임의, 고생→기여도 등으로 순화",
         "⚖️ [로직] 기여도 마일리지 영구 누적제 도입",
         "👥 [로직] 인원수(6~8인)에 따른 포지션 자동 조정",
-        "ℹ️ [안내] 공개 화면에 점수 계산표 추가"
+        "ℹ️ [안내] 공개 화면에 상세 점수 계산표 추가"
     ],
     "2026.01.08": [
         "🧹 [점수] 독점방지(신청 패널티) 삭제",
@@ -496,20 +497,32 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 및 마일리지 적립 (용어 통일)
+        # 7. 기록 및 마일리지 적립 (세분화됨)
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
             
+            # 성공 횟수 (감점)
             if match_type == '1st':
                 global_history[name] += 1
                 
+            # 마일리지 적립 (가산점)
             if match_type == 'wait':
                 global_hardship[name] += 10 # 대기 +10
             elif match_type == '3rd':
                 global_hardship[name] += 5  # 3순위 +5
-            elif match_type == '2nd' or match_type == 'random':
-                global_hardship[name] += 3  # 2순위/무작위 +3
+            elif match_type == '2nd':
+                global_hardship[name] += 3  # 2순위 +3
+            elif match_type == 'random':
+                # [NEW] 무작위 배정 시: 3지망까지 꽉 채워 썼는지 확인
+                wishes = [str(p.get('1순위', '')), str(p.get('2순위', '')), str(p.get('3순위', ''))]
+                # "선택 안함"이나 빈칸이 아닌 진짜 희망사항 개수 세기
+                valid_count = sum(1 for w in wishes if w.strip() and w != "선택 안함")
+                
+                if valid_count == 3:
+                    global_hardship[name] += 5 # 노력 인정! (+5점)
+                else:
+                    global_hardship[name] += 3 # 일반 무작위 (+3점)
 
         final_rounds[round_num] = (final_team_a, final_team_b)
         
@@ -532,11 +545,9 @@ st.markdown("""
 
 with st.sidebar:
     st.header("📢 Update Log")
-    
-    # [수정] 글씨 크기(12px)와 줄 간격을 줄여서 한눈에 보이게 변경
+    # [수정] 글씨 작게 조정
     for date, logs in UPDATE_LOGS.items():
         with st.expander(date):
-            # HTML을 사용하여 스타일 직접 적용
             content_html = "<ul style='font-size: 13px; padding-left: 15px; margin: 0; line-height: 1.4; color: #404040;'>"
             for log in logs:
                 content_html += f"<li style='margin-bottom: 4px;'>{log}</li>"
@@ -711,7 +722,7 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    # [수정] 기여도 마일리지 상세 내용 추가 & '1부 리그' 단어 삭제 유지
+    # [수정] 안내문구 업데이트 (노력형 불운 보너스 명시)
     with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
         st.markdown("""
         **1. 배정 기준 (우선순위 점수제)**
@@ -723,7 +734,8 @@ with tab2:
         | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
         | └ 대기 | `+10점` | 쉬었으면 확실한 우선권 부여 |
         | └ 3순위 | `+5점` | 원하지 않는 포지션 배정 시 마일리지 적립 |
-        | └ 임의/2순위 | `+3점` | 2순위 또는 임의(무작위) 배정 시 마일리지 적립 |
+        | └ 임의(노력) | `+5점` | **1·2·3순위 다 썼는데** 임의 배정된 경우 (위로금 상향) |
+        | └ 임의/2순위 | `+3점` | 2순위 또는 일반 임의 배정 시 마일리지 적립 |
 
         **2. 화면 보는 법**
         - **팀 확인**: A팀(🔴) / B팀(🔵)
@@ -926,7 +938,7 @@ with tab6:
     
     if st.session_state['lineup_admin_logged_in']:
         
-        # [수정] 설명에서 '1부 리그' 단어 완전 삭제
+        # [수정] 관리자용 안내문구 업데이트 (노력형 불운 보너스 명시)
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
             | 항목 | 점수 | 설명 |
@@ -937,7 +949,8 @@ with tab6:
             | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
             | └ 대기 | `+10점` | 쉬었으면 확실한 우선권 부여 |
             | └ 3순위 | `+5점` | 원하지 않는 포지션 배정 시 마일리지 적립 |
-            | └ 임의/2순위 | `+3점` | 2순위 또는 임의(무작위) 배정 시 마일리지 적립 |
+            | └ 임의(노력) | `+5점` | **1·2·3순위 다 썼는데** 임의 배정된 경우 (위로금 상향) |
+            | └ 임의/2순위 | `+3점` | 2순위 또는 일반 임의 배정 시 마일리지 적립 |
             """)
 
         data = load_applicants()
