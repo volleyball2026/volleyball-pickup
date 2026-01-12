@@ -923,7 +923,7 @@ with tab6:
     
     if st.session_state['lineup_admin_logged_in']:
         
-        # [NEW] 점수 계산 규칙 (독점방지 삭제됨)
+        # [NEW] 업데이트된 점수 계산 규칙
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
             | 항목 | 점수 | 설명 |
@@ -931,8 +931,9 @@ with tab6:
             | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
             | **VEGA 회원** | `+100점` | 1부 리그 우대 |
             | **누적 1순위** | `-10점`/회 | 오늘 1순위를 많이 해본 사람은 양보 유도 |
-            | **직전 대기** | `+5점` | 쉬었으면 우선권 부여 |
-            | **직전 땜빵** | `+2점` | 2·3순위/무작위 했으면 소폭 우대 |
+            | **직전 대기** | `+10점` | 쉬었으면 확실한 우선권 부여 |
+            | **직전 3순위** | `+5점` | 원하지 않는 포지션 했으면 우대 |
+            | **직전 땜빵** | `+3점` | 2순위 또는 무작위 배정 시 우대 |
             """)
 
         data = load_applicants()
@@ -973,10 +974,9 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # [NEW] 확실한 색깔 배지 아이콘 (글자+색상)
+                        # 아이콘 배지 (글자+색상)
                         def get_admin_badge(p):
                             m = p.get('match_type')
-                            # 1순위: 파랑, 무작위: 빨강(글자 '무')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
                             elif m == '2nd': return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
                             elif m == '3rd': return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
