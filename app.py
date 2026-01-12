@@ -323,42 +323,56 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
-# [NEW] 우선순위 점수 계산기 (가독성 좋은 점수제)
+# [NEW] 점수 계산기 (상세 사유 리턴 추가)
 def get_priority_score(player, last_result_map, last_pos_map, global_history):
     name = player['이름']
     target_pos = str(player['1순위']).strip()
     
-    # 1. 기본 점수 (10점 만점 기준)
-    score = 10.0
+    score = 50.0 # 마이너스 방지를 위한 기본점수 상향
+    reasons = ["기본(50)"]
     
-    # 2. VEGA 우대 (100점 단위로 티어 구분)
+    # 1. VEGA 우대
     if "[VEGA]" in name:
         score += 100.0
+        reasons.append("+VEGA(100)")
         
-    # 3. [핵심] 누적 1순위 성공 횟수 견제
-    # 1번 해먹을 때마다 -10점씩 깎임
-    # (예: 1번 한 사람 = 0점, 안 한 사람 = 10점 -> 안 한 사람이 이김)
+    # 2. 누적 1순위 성공 횟수 견제 (1회당 -10점)
     success_count = global_history.get(name, 0)
-    score -= (success_count * 10.0)
+    if success_count > 0:
+        penalty = success_count * 10.0
+        score -= penalty
+        reasons.append(f"-누적{success_count}회({int(penalty)})")
     
-    # 4. 한풀이 (직전 라운드 고생 보너스)
+    # 3. 한풀이 (직전 라운드 고생 보너스)
     last_res = last_result_map.get(name)
-    if last_res == 'wait': score += 5.0      # 대기: +5점
-    elif last_res == '3rd': score += 3.0     # 3순위: +3점
-    elif last_res == '2nd': score += 2.0     # 2순위: +2점
-    elif last_res == 'random': score += 2.0  # 땜빵: +2점
-    elif last_res == '1st': score -= 5.0     # 1순위: -5점 (양보)
+    if last_res == 'wait': 
+        score += 5.0
+        reasons.append("+직전대기(5)")
+    elif last_res == '3rd': 
+        score += 3.0
+        reasons.append("+직전3순위(3)")
+    elif last_res == '2nd': 
+        score += 2.0
+        reasons.append("+직전2순위(2)")
+    elif last_res == 'random': 
+        score += 2.0
+        reasons.append("+직전땜빵(2)")
+    elif last_res == '1st': 
+        score -= 5.0
+        reasons.append("-직전1순위(5)")
     
-    # 5. 연속 배정 페널티 (직전과 같으면 감점)
+    # 4. 연속 배정 페널티 (직전과 같으면 감점)
     last_pos = last_pos_map.get(name)
     if last_pos: last_pos = str(last_pos).strip()
     
     if last_pos == target_pos:
-        score -= 5.0 # 경쟁 시 밀려나도록 유도
+        score -= 5.0
+        reasons.append("-연속신청(5)")
         
-    # 동점 방지용 미세 랜덤 (0.0 ~ 0.9)
+    # 동점 방지용 미세 랜덤
     score += random.random()
-    return score
+    
+    return score, " ".join(reasons)
 
 def assign_positions_in_team(team_members):
     # 초기화
@@ -437,27 +451,25 @@ def assign_positions_in_team(team_members):
 
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
-    
-    # 누적 기록 (오늘 1순위 몇 번 했나)
     global_history = {p['이름']: 0 for p in base_players}
-    
     last_result_map = {p['이름']: None for p in base_players} 
     last_pos_map = {p['이름']: None for p in base_players}    
-    
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # [핵심] 데이터 격리 (Deep Copy)
+        # 데이터 격리 (Deep Copy)
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산 (누적 기록 반영)
+        # 1. 점수 계산 (점수와 사유를 함께 받아옴)
         for p in current_players:
-            p['priority_score'] = get_priority_score(p, last_result_map, last_pos_map, global_history)
+            score, reason = get_priority_score(p, last_result_map, last_pos_map, global_history)
+            p['priority_score'] = score
+            p['score_reason'] = reason
 
         # 2. 정렬
         current_players.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 3. 팀 나누기 (VEGA 우선)
+        # 3. 팀 나누기
         vegas = [p for p in current_players if "[VEGA]" in p['이름']]
         pickups = [p for p in current_players if "[VEGA]" not in p['이름']]
         
@@ -502,20 +514,15 @@ def generate_vega_priority_schedule(df):
         
         # 7. 기록 업데이트
         new_last_pos_map = {p['이름']: None for p in base_players}
-        
         for p in final_team_a + final_team_b:
             name = p['이름']
             last_result_map[name] = p.get('match_type')
-            
             if p['assigned_pos'] and p['assigned_pos'] != "대기":
                 new_last_pos_map[name] = str(p['assigned_pos']).strip()
-                
-            # 누적 1순위 횟수 증가
             if p.get('match_type') == '1st':
                 global_history[name] += 1 
 
         last_pos_map = new_last_pos_map
-            
         final_rounds[round_num] = (final_team_a, final_team_b)
         
     return final_rounds
@@ -936,7 +943,7 @@ with tab6:
                     st.success("완료!")
                     
             if 'fair_results' in st.session_state:
-                # 데이터프레임에 반영 (저장 준비)
+                # 데이터 저장용 처리
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
@@ -953,14 +960,12 @@ with tab6:
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
-                
                 # 화면 표시
                 r_tabs = st.tabs(["1·2", "3·4", "5·6"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 아이콘 헬퍼 함수
                         def get_admin_icon(p):
                             m = p.get('match_type')
                             if m == '1st': return "1️⃣"
@@ -968,17 +973,17 @@ with tab6:
                             elif m == '3rd': return "3️⃣"
                             else: return "🎲"
 
-                        # 경기 정보 안내
+                        # [점수 및 사유 표시용 함수]
+                        def get_score_display(p):
+                            # 점수는 소수점 1자리, 사유는 괄호 안에
+                            # ex: [점수: 145.2 | 기본(50) +VEGA(100) ...]
+                            return f"[점수: {p['priority_score']:.1f} | {p.get('score_reason', '')}]"
+
                         real_players = [p for p in team_a + team_b if p['assigned_pos'] != "대기"]
                         if real_players:
                             count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                             count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
-                            assigned_set = set(p['assigned_pos'] for p in real_players)
-                            full_set = set(POSITIONS_ALL)
-                            missing = list(full_set - assigned_set)
-                            info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**"
-                            if missing: info_msg += f" (제외: {', '.join(missing)})"
-                            st.info(info_msg)
+                            st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**")
 
                         c1, c2 = st.columns(2)
                         with c1: 
@@ -986,22 +991,24 @@ with tab6:
                             for p in team_a: 
                                 if p['assigned_pos']!="대기":
                                     icon = get_admin_icon(p)
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']}) [점수: {p['priority_score']:.1f}]")
+                                    # 이름 옆에 상세 점수 내역 표시
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    st.caption(f"└ {get_score_display(p)}")
                         with c2: 
                             st.info("🔵 B팀 (픽업)")
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": 
                                     icon = get_admin_icon(p)
-                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']}) [점수: {p['priority_score']:.1f}]")
+                                    st.write(f"- **{p['assigned_pos']}**: {p['이름']} ({icon} {p['1순위']})")
+                                    st.caption(f"└ {get_score_display(p)}")
                         
-                        # 대기 인원
                         st.markdown("---")
                         bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
                         bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
                         if bench_a or bench_b:
                             st.caption("🛌 대기")
                             for p in bench_a + bench_b:
-                                st.write(f"- {p['이름']} (희망: {p['1순위']})")
+                                st.write(f"- {p['이름']} (희망: {p['1순위']}) {get_score_display(p)}")
 
             st.divider()
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
