@@ -435,6 +435,7 @@ def assign_positions_in_team(team_members):
                 
     return team_members
 
+# [최종 수정] 용병 선발 기준: 포지션 > 밸런스 > 점수
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     global_history = {p['이름']: 0 for p in base_players}
@@ -451,78 +452,134 @@ def generate_vega_priority_schedule(df):
             p['priority_score'] = score
             p['score_reason'] = reason
 
-        # 2. 정렬
+        # 2. 참가자 선발 (점수 높은 순)
         current_players.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 3. 팀 나누기
-        vegas = [p for p in current_players if "[VEGA]" in p['이름']]
-        pickups = [p for p in current_players if "[VEGA]" not in p['이름']]
+        total_pool = len(current_players)
+        match_capacity = total_pool
+        if match_capacity % 2 != 0: match_capacity -= 1
         
-        team_size = len(base_players) // 2
+        selected_players = current_players[:match_capacity]
+        waiting_players = current_players[match_capacity:]
         
-        # 4. 유효 포지션 확인
-        valid_positions = set(POSITIONS_ALL)
-        if team_size == 7: valid_positions -= {'속공', '센터백'}
-        elif team_size == 6: valid_positions -= {'속공', '센터백', '백차'}
+        for wp in waiting_players:
+            wp['assigned_pos'] = "대기"
+            wp['match_type'] = "wait"
+
+        # 3. VEGA / 픽업 분리
+        vegas = [p for p in selected_players if "[VEGA]" in p['이름']]
+        pickups = [p for p in selected_players if "[VEGA]" not in p['이름']]
         
-        # 5. A팀 스카우트
-        team_a = vegas[:team_size]
-        rem_vegas = vegas[team_size:]
+        team_size = match_capacity // 2
         
+        # 4. A팀(VEGA 기반) 채우기
+        
+        # 4-1. VEGA 인원 배치
+        if len(vegas) > team_size:
+            move_to_b = vegas[team_size:]
+            team_a = vegas[:team_size]
+            pickups.extend(move_to_b)
+        else:
+            team_a = vegas[:] 
+            
+        # 4-2. [핵심] 최적의 용병 찾기 (포지션 > 밸런스 > 점수)
         slots_needed = team_size - len(team_a)
-        pool = pickups[:]
-        selected_for_a = []
-        current_positions = [str(p['1순위']).strip() for p in team_a]
         
-        for _ in range(slots_needed):
-            missing_pos = list(valid_positions - set(current_positions))
-            candidates = [p for p in pool if str(p['1순위']).strip() in missing_pos]
+        if slots_needed > 0:
+            # (1) 현재 A팀에 부족한 포지션 파악
+            active_quotas = POSITION_QUOTAS.copy()
+            if team_size == 7:
+                for pos in ['속공', '센터백']: active_quotas[pos] = 0
+            elif team_size == 6:
+                for pos in ['속공', '센터백', '백차']: active_quotas[pos] = 0
             
-            if candidates:
-                candidates.sort(key=lambda x: x['priority_score'], reverse=True)
-                best = candidates[0]
-            else:
-                pool.sort(key=lambda x: x['priority_score'], reverse=True)
-                best = pool[0] if pool else None
+            current_positions = [str(p['1순위']).strip() for p in team_a]
+            missing_needs = []
+            for pos, quota in active_quotas.items():
+                if quota > 0:
+                    have = current_positions.count(pos)
+                    if have < quota:
+                        missing_needs.append(pos) 
+
+            # (2) 조합 계산 준비
+            def get_lv(p): return LEVEL_MAP.get(p.get('레벨', '입문').split(" ")[0], 1)
             
-            if best:
-                selected_for_a.append(best)
-                current_positions.append(str(best['1순위']).strip())
-                pool.remove(best)
+            current_a_sum = sum(get_lv(p) for p in team_a)
+            all_pickup_sum = sum(get_lv(p) for p in pickups)
+            target_a_total = (current_a_sum + all_pickup_sum) / 2
+            
+            best_combination = None
+            # [수정된 기준] (포지션 채움 수, -레벨차이, 점수 합계)
+            # 파이썬 튜플 비교: 첫 번째 요소부터 비교
+            best_score_tuple = (-1, -float('inf'), -float('inf')) 
+            
+            from itertools import combinations
+            
+            for filler_subset in combinations(pickups, slots_needed):
+                # 1. 포지션 적합도 (Position Fit)
+                fill_count = 0
+                temp_needs = missing_needs[:] 
+                for p in filler_subset:
+                    w1 = str(p['1순위']).strip()
+                    if w1 in temp_needs:
+                        fill_count += 1
+                        temp_needs.remove(w1)
+                
+                # 2. [격상] 레벨 밸런스 (Level Balance)
+                # 점수보다 밸런스를 먼저 고려!
+                subset_sum = sum(get_lv(p) for p in filler_subset)
+                new_a_sum = current_a_sum + subset_sum
+                diff = abs(target_a_total - new_a_sum) # 0에 가까울수록 좋음
+                
+                # 3. [후순위] 우선순위 점수 (Priority Score)
+                # 밸런스까지 똑같다면, 그때 점수 높은 사람을 선택
+                total_p_score = sum(p['priority_score'] for p in filler_subset)
+
+                # [비교]
+                # 1순위: 포지션 많이 채운 쪽 (fill_count 클수록)
+                # 2순위: 레벨 차이가 적은 쪽 (-diff 클수록, 즉 diff가 작을수록)
+                # 3순위: 점수 합이 높은 쪽 (total_p_score 클수록)
+                current_score_tuple = (fill_count, -diff, total_p_score)
+                
+                if current_score_tuple > best_score_tuple:
+                    best_score_tuple = current_score_tuple
+                    best_combination = list(filler_subset)
+            
+            # 확정된 용병 이동
+            if best_combination:
+                team_a.extend(best_combination)
+                for p in best_combination:
+                    pickups.remove(p)
         
-        team_a += selected_for_a
-        team_b = rem_vegas + pool
+        # 나머지는 B팀
+        team_b = pickups[:]
         
-        # 6. 포지션 배정
+        # 5. 각 팀 포지션 배정
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 및 마일리지 적립 (세분화됨)
+        # 대기자 추가
+        final_team_b.extend(waiting_players) 
+        
+        # 6. 기록 적립
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
             
-            # 성공 횟수 (감점)
             if match_type == '1st':
                 global_history[name] += 1
                 
-            # 마일리지 적립 (가산점)
             if match_type == 'wait':
-                global_hardship[name] += 10 # 대기 +10
+                global_hardship[name] += 10 
             elif match_type == '3rd':
-                global_hardship[name] += 5  # 3순위 +5
+                global_hardship[name] += 5  
             elif match_type == '2nd':
-                global_hardship[name] += 3  # 2순위 +3
+                global_hardship[name] += 3  
             elif match_type == 'random':
-                # [NEW] 무작위 배정 시: 3지망까지 꽉 채워 썼는지 확인
                 wishes = [str(p.get('1순위', '')), str(p.get('2순위', '')), str(p.get('3순위', ''))]
-                # "선택 안함"이나 빈칸이 아닌 진짜 희망사항 개수 세기
                 valid_count = sum(1 for w in wishes if w.strip() and w != "선택 안함")
-                
-                if valid_count == 3:
-                    global_hardship[name] += 5 # 노력 인정! (+5점)
-                else:
-                    global_hardship[name] += 3 # 일반 무작위 (+3점)
+                if valid_count == 3: global_hardship[name] += 5 
+                else: global_hardship[name] += 3 
 
         final_rounds[round_num] = (final_team_a, final_team_b)
         
