@@ -355,6 +355,7 @@ def get_priority_score(player, global_history, global_hardship):
     return score, " ".join(reasons)
 
 # [핵심 수정] 사람 중심 배정 (점수 높은 사람이 1,2,3순위 싹 훑고 지나감)
+# [핵심 수정] 1~3순위 전체 선호도 반영
 def assign_positions_in_team(team_members):
     # 초기화
     for p in team_members:
@@ -369,17 +370,30 @@ def assign_positions_in_team(team_members):
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
     
+    # [수정된 로직] 8인(16명) 경기 시 포지션 결정 (1~3순위 모두 고려)
     if team_size == 8:
-        cnt_fast = sum(1 for p in team_members if '속공' in str(p['1순위']))
-        cnt_cb = sum(1 for p in team_members if '센터백' in str(p['1순위']))
-        if cnt_fast >= cnt_cb: current_quotas['센터백'] = 0
-        else: current_quotas['속공'] = 0
+        cnt_fast = 0   # 속공 선호도 총합
+        cnt_cb = 0     # 센터백 선호도 총합
+        
+        for p in team_members:
+            # 이 사람의 1, 2, 3순위를 모두 확인
+            wishes = [str(p['1순위']), str(p['2순위']), str(p['3순위'])]
+            for w in wishes:
+                if '속공' in w: cnt_fast += 1
+                if '센터백' in w: cnt_cb += 1
+        
+        # 더 인기 있는 포지션을 살림 (동점이면 공격적인 '속공' 우선)
+        if cnt_fast >= cnt_cb: 
+            current_quotas['센터백'] = 0 # 센터백 닫음
+        else: 
+            current_quotas['속공'] = 0   # 속공 닫음
+
     elif team_size == 7:
         for pos in ['속공', '센터백']: current_quotas[pos] = 0
     elif team_size == 6:
         for pos in ['속공', '센터백', '백차']: current_quotas[pos] = 0
             
-    # 3. [로직 변경] 한 명씩 순서대로 1->2->3순위 시도
+    # 3. 단계별 배정 (점수 높은 사람이 1->2->3순위 우선권 가짐)
     for p in team_members:
         # (Step 1) 1순위 시도
         pos1 = str(p['1순위']).strip()
@@ -388,27 +402,27 @@ def assign_positions_in_team(team_members):
             current_quotas[pos1] -= 1
             p['match_type'] = '1st'
             p['got_1st'] = True
-            continue # 배정됐으면 다음 사람으로
+            continue 
 
-        # (Step 2) 2순위 시도 (1순위 실패 시)
+        # (Step 2) 2순위 시도
         pos2 = p['2순위']
         if pos2: pos2 = str(pos2).strip()
         if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
             p['assigned_pos'] = pos2
             current_quotas[pos2] -= 1
             p['match_type'] = '2nd'
-            continue # 배정됐으면 다음 사람으로
+            continue 
 
-        # (Step 3) 3순위 시도 (2순위도 실패 시)
+        # (Step 3) 3순위 시도
         pos3 = p['3순위']
         if pos3: pos3 = str(pos3).strip()
         if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
             p['assigned_pos'] = pos3
             current_quotas[pos3] -= 1
             p['match_type'] = '3rd'
-            continue # 배정됐으면 다음 사람으로
+            continue 
             
-    # (Step 4) 무작위 (빈자리 채우기) - 위에서 다 돌고 남은 사람들
+    # (Step 4) 무작위 (빈자리 채우기)
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
