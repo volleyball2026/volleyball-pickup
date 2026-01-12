@@ -711,14 +711,14 @@ with tab1:
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    # [NEW] 공개 화면에도 배정 기준(순화된 용어) 안내
+    # [수정] 설명에서 '1부 리그' 단어 완전 삭제
     with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
         st.markdown("""
         **1. 배정 기준 (우선순위 점수제)**
         | 항목 | 점수 | 설명 |
         | :--- | :--- | :--- |
         | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
-        | **VEGA 회원** | `+100점` | 1부 리그(VEGA) **우선권 부여** |
+        | **VEGA 회원** | `+100점` | **우선권 부여** |
         | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
         | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
 
@@ -756,10 +756,8 @@ with tab2:
                             if missing: info_msg += f" (제외: {', '.join(missing)})"
                             st.info(info_msg)
 
-                        # [NEW] 공개 화면용 컬러 배지 함수
                         def get_badge(row, pos_col):
                             current = row[pos_col]
-                            # match_type 정보가 없으므로 1,2,3순위 비교로 추론
                             if current == row['1순위']: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
                             elif current == row['2순위']: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
                             elif current == row['3순위']: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
@@ -925,13 +923,13 @@ with tab6:
     
     if st.session_state['lineup_admin_logged_in']:
         
-        # [NEW] 업데이트된 점수 계산 규칙 (순화된 용어 적용)
+        # [수정] 설명에서 '1부 리그' 단어 완전 삭제
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
             | 항목 | 점수 | 설명 |
             | :--- | :--- | :--- |
             | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
-            | **VEGA 회원** | `+100점` | 1부 리그(VEGA) **우선권 부여** |
+            | **VEGA 회원** | `+100점` | **우선권 부여** |
             | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
             | **기여도 마일리지** | **누적** | **한번 얻은 점수는 사라지지 않음!** (대기/비선호 포지션 수행 시 적립) |
             | └ 대기 | `+10점` | 쉬었으면 확실한 우선권 부여 |
@@ -977,7 +975,6 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 아이콘 배지 (글자+색상) - 관리자용
                         def get_admin_badge(p):
                             m = p.get('match_type')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
