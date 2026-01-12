@@ -995,7 +995,7 @@ with tab6:
     
     if st.session_state['lineup_admin_logged_in']:
         
-        # [수정] 관리자용 안내문구 업데이트 (노력형 불운 보너스 명시)
+        # 안내문구
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
             | 항목 | 점수 | 설명 |
@@ -1048,6 +1048,21 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
+                        # [NEW] 레벨 합계 계산 함수
+                        def calculate_team_sum(team_list):
+                            total = 0
+                            for p in team_list:
+                                if p['assigned_pos'] != "대기":
+                                    # LEVEL_MAP: 입문(1) ~ 최상급(5)
+                                    lv = p.get('레벨', '입문').split(" ")[0]
+                                    score = LEVEL_MAP.get(lv, 1)
+                                    total += score
+                            return total
+
+                        sum_a = calculate_team_sum(team_a)
+                        sum_b = calculate_team_sum(team_b)
+                        
+                        # 아이콘 및 점수 표시 함수
                         def get_admin_badge(p):
                             m = p.get('match_type')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
@@ -1063,21 +1078,43 @@ with tab6:
                             count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                             count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
                             st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**")
+                            
+                            # [NEW] 전력 비교 (합계 기준)
+                            st.markdown("##### ⚖️ 팀 레벨 합계 (밸런스 확인)")
+                            b_col1, b_col2 = st.columns([1, 4])
+                            with b_col1:
+                                diff = sum_a - sum_b
+                                delta_color = "off"
+                                if abs(diff) <= 2: delta_color = "normal" # 차이가 적으면 좋음(녹색/검정)
+                                else: delta_color = "inverse" # 차이가 크면 경고(빨강)
+                                st.metric("🔴 A팀 합계", f"{sum_a}", delta=f"격차: {diff}", delta_color=delta_color)
+                            with b_col2:
+                                # 최대 점수 기준으로 그래프 비율 산정 (인원수 * 5점 만점)
+                                max_possible = max(count_a, count_b) * 5
+                                if max_possible == 0: max_possible = 1
+                                st.caption(f"A팀({sum_a}) vs B팀({sum_b})")
+                                st.progress(min(sum_a / max_possible, 1.0))
+                                st.progress(min(sum_b / max_possible, 1.0))
 
                         c1, c2 = st.columns(2)
                         with c1: 
-                            st.error("🔴 A팀 (VEGA)")
+                            # [수정] 합계 점수 표시
+                            st.error(f"🔴 A팀 (VEGA) [합계: {sum_a}]")
                             for p in team_a: 
                                 if p['assigned_pos']!="대기":
                                     badge = get_admin_badge(p)
-                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} ({p['1순위']})", unsafe_allow_html=True)
+                                    lv = p.get('레벨', '입문').split(' ')[0]
+                                    # 이름 옆에 회색으로 레벨 표시
+                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} <span style='color:gray; font-size:0.8em;'>({lv})</span>", unsafe_allow_html=True)
                                     st.caption(f"└ {get_score_display(p)}")
                         with c2: 
-                            st.info("🔵 B팀 (픽업)")
+                            # [수정] 합계 점수 표시
+                            st.info(f"🔵 B팀 (픽업) [합계: {sum_b}]")
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": 
                                     badge = get_admin_badge(p)
-                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} ({p['1순위']})", unsafe_allow_html=True)
+                                    lv = p.get('레벨', '입문').split(' ')[0]
+                                    st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} <span style='color:gray; font-size:0.8em;'>({lv})</span>", unsafe_allow_html=True)
                                     st.caption(f"└ {get_score_display(p)}")
                         
                         st.markdown("---")
