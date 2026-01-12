@@ -336,16 +336,14 @@ def get_priority_score(player, global_history, global_hardship):
         score += 100.0
         reasons.append("+VEGA(100)")
         
-    # 2. 누적 1순위 성공 견제 (성공 1회당 -10점)
-    # (성공하면 점수가 깎이지만, 쌓아둔 고생 마일리지는 그대로 남음 -> 상쇄 효과)
+    # 2. 누적 1순위 성공 견제
     success_count = global_history.get(name, 0)
     if success_count > 0:
         penalty = success_count * 10.0
         score -= penalty
         reasons.append(f"-성공{success_count}회({int(penalty)})")
     
-    # 3. [핵심] 고생 마일리지 (영구 누적)
-    # 직전 라운드 결과가 아니라, 오늘 하루 쌓인 총 고생 점수를 더함
+    # 3. 고생 마일리지 (영구 누적)
     hardship_score = global_hardship.get(name, 0)
     if hardship_score > 0:
         score += hardship_score
@@ -356,6 +354,7 @@ def get_priority_score(player, global_history, global_hardship):
     
     return score, " ".join(reasons)
 
+# [핵심 수정] 사람 중심 배정 (점수 높은 사람이 1,2,3순위 싹 훑고 지나감)
 def assign_positions_in_team(team_members):
     # 초기화
     for p in team_members:
@@ -380,41 +379,36 @@ def assign_positions_in_team(team_members):
     elif team_size == 6:
         for pos in ['속공', '센터백', '백차']: current_quotas[pos] = 0
             
-    # 3. 단계별 배정
-    
-    # (Step 1) 1순위 배정
+    # 3. [로직 변경] 한 명씩 순서대로 1->2->3순위 시도
     for p in team_members:
-        pos = str(p['1순위']).strip()
-        
-        if current_quotas.get(pos, 0) > 0:
-            p['assigned_pos'] = pos
-            current_quotas[pos] -= 1
+        # (Step 1) 1순위 시도
+        pos1 = str(p['1순위']).strip()
+        if current_quotas.get(pos1, 0) > 0:
+            p['assigned_pos'] = pos1
+            current_quotas[pos1] -= 1
             p['match_type'] = '1st'
             p['got_1st'] = True
-        else:
-            p['got_1st'] = False
-            
-    # (Step 2) 2순위
-    for p in team_members:
-        if p['assigned_pos'] is None:
-            pos = p['2순위']
-            if pos: pos = str(pos).strip()
-            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
-                p['assigned_pos'] = pos
-                current_quotas[pos] -= 1
-                p['match_type'] = '2nd'
+            continue # 배정됐으면 다음 사람으로
 
-    # (Step 3) 3순위
-    for p in team_members:
-        if p['assigned_pos'] is None:
-            pos = p['3순위']
-            if pos: pos = str(pos).strip()
-            if pos and pos != "선택 안함" and current_quotas.get(pos, 0) > 0:
-                p['assigned_pos'] = pos
-                current_quotas[pos] -= 1
-                p['match_type'] = '3rd'
-                
-    # (Step 4) 무작위
+        # (Step 2) 2순위 시도 (1순위 실패 시)
+        pos2 = p['2순위']
+        if pos2: pos2 = str(pos2).strip()
+        if pos2 and pos2 != "선택 안함" and current_quotas.get(pos2, 0) > 0:
+            p['assigned_pos'] = pos2
+            current_quotas[pos2] -= 1
+            p['match_type'] = '2nd'
+            continue # 배정됐으면 다음 사람으로
+
+        # (Step 3) 3순위 시도 (2순위도 실패 시)
+        pos3 = p['3순위']
+        if pos3: pos3 = str(pos3).strip()
+        if pos3 and pos3 != "선택 안함" and current_quotas.get(pos3, 0) > 0:
+            p['assigned_pos'] = pos3
+            current_quotas[pos3] -= 1
+            p['match_type'] = '3rd'
+            continue # 배정됐으면 다음 사람으로
+            
+    # (Step 4) 무작위 (빈자리 채우기) - 위에서 다 돌고 남은 사람들
     for p in team_members:
         if p['assigned_pos'] is None:
             allocated = False
@@ -433,24 +427,21 @@ def assign_positions_in_team(team_members):
 
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
-    
-    # [상태 저장소]
-    global_history = {p['이름']: 0 for p in base_players} # 1순위 성공 횟수 (감점용)
-    global_hardship = {p['이름']: 0 for p in base_players} # 고생 마일리지 (가산점용, 영구 누적)
-    
+    global_history = {p['이름']: 0 for p in base_players}
+    global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 데이터 격리 (Deep Copy)
+        # 데이터 격리
         current_players = [p.copy() for p in base_players]
         
-        # 1. 점수 계산 (누적된 마일리지 반영)
+        # 1. 점수 계산
         for p in current_players:
             score, reason = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = score
             p['score_reason'] = reason
 
-        # 2. 정렬
+        # 2. 정렬 (점수 순)
         current_players.sort(key=lambda x: x['priority_score'], reverse=True)
         
         # 3. 팀 나누기
@@ -496,23 +487,22 @@ def generate_vega_priority_schedule(df):
         final_team_a = assign_positions_in_team(team_a)
         final_team_b = assign_positions_in_team(team_b)
         
-        # 7. 기록 및 마일리지 적립 (다음 라운드용)
+        # 7. 기록 및 마일리지 적립
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
             
-            # (1) 1순위 성공 시 -> 성공 횟수 증가 (감점 요인)
+            # 성공 횟수 증가
             if match_type == '1st':
                 global_history[name] += 1
                 
-            # (2) 고생 마일리지 적립 (가산점 요인 - 영구 누적)
-            # 한번 쌓이면 사라지지 않고 계속 남아서 1순위 경쟁에 도움을 줌
+            # 고생 마일리지 적립
             if match_type == 'wait':
-                global_hardship[name] += 10 # 대기: +10점
+                global_hardship[name] += 10
             elif match_type == '3rd':
-                global_hardship[name] += 5  # 3순위: +5점
+                global_hardship[name] += 5
             elif match_type == '2nd' or match_type == 'random':
-                global_hardship[name] += 3  # 2순위/땜빵: +3점
+                global_hardship[name] += 3
 
         final_rounds[round_num] = (final_team_a, final_team_b)
         
