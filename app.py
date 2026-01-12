@@ -329,11 +329,11 @@ def get_priority_score(player, last_result_map, last_pos_map):
     target_pos = str(player['1순위']).strip()
     score = 1000.0
     
-    # 1. VEGA 우대 (팀 밸런스 유지)
+    # 1. VEGA 우대
     if "[VEGA]" in name:
         score += 100000
         
-    # 2. 한풀이 (고생한 사람 우대)
+    # 2. 한풀이 (직전 결과에 따른 보상)
     last_res = last_result_map.get(name)
     if last_res == 'wait': score += 500      # 대기했으면 최우선
     elif last_res == '3rd': score += 300     # 3순위 밀렸으면 우선
@@ -341,14 +341,14 @@ def get_priority_score(player, last_result_map, last_pos_map):
     elif last_res == 'random': score += 200  # 땜빵했으면 우선
     elif last_res == '1st': score -= 500     # 1순위 했으면 양보할 차례
     
-    # 3. [핵심] 연속 배정 페널티 (폭격 아님, 양보 유도)
+    # 3. 연속 배정 페널티 (경쟁 시에만 밀리도록 설정)
     last_pos = last_pos_map.get(name)
     if last_pos: last_pos = str(last_pos).strip()
     
     if last_pos == target_pos:
-        # -100만점이 아니라, 경쟁에서만 밀리도록 적당히 깎음
-        # 경쟁자(1000점) > 나(500점) -> 밀림
-        # 경쟁자 없음(0점) < 나(500점) -> 내가 함
+        # -500점 감점:
+        # 경쟁자(1000점)가 있으면 짐 (1000 vs 500) -> 양보
+        # 경쟁자 없으면(0점) 이김 (500 vs 0) -> 연임
         score -= 500 
         
     score += random.random()
@@ -368,7 +368,7 @@ def assign_positions_in_team(team_members):
     team_size = len(team_members)
     current_quotas = POSITION_QUOTAS.copy()
     
-    # 인원수에 따른 포지션 제외 로직
+    # 인원수에 따른 포지션 제외
     if team_size == 8:
         cnt_fast = sum(1 for p in team_members if '속공' in str(p['1순위']))
         cnt_cb = sum(1 for p in team_members if '센터백' in str(p['1순위']))
@@ -385,8 +385,7 @@ def assign_positions_in_team(team_members):
     for p in team_members:
         pos = str(p['1순위']).strip()
         
-        # [수정] 강제 차단 코드 삭제함!
-        # 그냥 점수 순서대로 자리가 있으면 들어감
+        # [수정] 강제 차단 없이, 점수 순서대로 자리가 있으면 배정
         if current_quotas.get(pos, 0) > 0:
             p['assigned_pos'] = pos
             current_quotas[pos] -= 1
@@ -421,8 +420,6 @@ def assign_positions_in_team(team_members):
             allocated = False
             for pos, count in current_quotas.items():
                 if count > 0:
-                    # [수정] 무작위 배정 시 '금지 포지션' 로직 삭제
-                    # 자리가 비었으면 누가 됐든 채워야 함
                     p['assigned_pos'] = pos
                     current_quotas[pos] -= 1
                     p['match_type'] = 'random'
@@ -442,13 +439,10 @@ def generate_vega_priority_schedule(df):
     last_pos_map = {p['이름']: None for p in base_players}    
     
     final_rounds = {}
-    
-    # 로그창 (작동 확인용)
-    log_area = st.expander("🛠️ 알고리즘 로그", expanded=False)
 
     for round_num in range(1, 4):
         # [핵심] 데이터 격리 (Deep Copy) 🛡️
-        # 매 라운드 새로운 명단을 복사해서 쓰므로 이전 라운드 기록이 꼬이지 않음
+        # 매 라운드마다 명단을 새로 복사해서 사용 -> 기록 덮어쓰기 문제 완벽 해결
         current_players = [p.copy() for p in base_players]
         
         # 1. 점수 계산
@@ -510,6 +504,7 @@ def generate_vega_priority_schedule(df):
             name = p['이름']
             last_result_map[name] = p.get('match_type')
             
+            # 1순위든 땜빵이든 실제로 뛴 포지션을 기록
             if p['assigned_pos'] and p['assigned_pos'] != "대기":
                 new_last_pos_map[name] = str(p['assigned_pos']).strip()
 
