@@ -55,7 +55,7 @@ BADGE_DEFINITIONS = {
     "scouter": {"icon": "🦅", "name": "독수리의 눈", "desc": "MVP 투표 10회 참여"},
     "rookie": {"icon": "🌱", "name": "슈퍼 루키", "desc": "5경기 내 MVP 수상"},
     "guardian": {"icon": "👼", "name": "수호천사", "desc": "대기 자원/수행 3회 이상"},
-    "iron_wall": {"icon": "🧱", "name": "통곡의 벽", "desc": "센터/센터백 5회 이상"},
+    "iron_wall": {"icon": "🧱", "name": "통곡의 벽", "desc": "속공/센터백 5회 이상"},
     "legend": {"icon": "🏅", "name": "터줏대감", "desc": "총 참여 30회 돌파"},
     "levelup": {"icon": "🔥", "name": "성장왕", "desc": "초기보다 레벨 상승"}
 }
