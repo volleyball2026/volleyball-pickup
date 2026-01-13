@@ -689,8 +689,23 @@ with tab1:
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
         st.divider()
 
-        if is_expired: st.warning("🚫 **참가 신청 기간이 지났습니다.**")
+# [수정] 마감되었을 때 오픈채팅방 안내 문구 표시
+        if is_expired:
+            st.error(f"🚫 **온라인 신청이 마감되었습니다.** ({deadline_str})")
+            
+            st.write("") # 여백
+            
+            with st.container(border=True):
+                st.subheader("😥 조금 늦으셨나요?")
+                st.markdown("""
+                **시범 운영 기간**에는 마감 후에도 빈 자리가 있다면 참가가 가능할 수 있습니다.
+                참가를 원하시면 아래 버튼을 눌러 **오픈채팅방**으로 문의해주세요.
+                """)
+                # 사이드바에 있던 오픈채팅방 링크 활용
+                st.link_button("💬 운영진에게 문의하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
+                
         else:
+            # (기존 신청 폼 코드 계속...)
             st.write("### 👇 참가 신청서")
             with st.form("apply_form"):
                 c1, c2 = st.columns(2)
