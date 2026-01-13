@@ -1189,18 +1189,14 @@ with tab6:
             # -----------------------------------------------------------------
             # [복구 로직] 저장된 데이터가 있으면 session_state 복구
             # -----------------------------------------------------------------
-            # 만약 현재 메모리에 라인업 결과가 없는데, DB(df)에는 확정 데이터가 있다면? -> 복구!
             if 'fair_results' not in st.session_state and '확정1' in df.columns:
-                # 확정된 데이터가 하나라도 있는지 확인
                 if df['확정1'].astype(str).str.strip().any():
                     restored_results = {}
                     
-                    # 점수/배지 복구를 위한 기본 계산
                     base_players = df.to_dict('records')
                     g_hist = {p['이름']: 0 for p in base_players}
-                    g_hard = {p['이름']: 0 for p in base_players} # 단순화(실제론 DB기록 필요하지만 여기선 현재 기준)
+                    g_hard = {p['이름']: 0 for p in base_players}
                     
-                    # 플레이어별 점수 미리 계산
                     score_map = {}
                     for p in base_players:
                         sc, re = get_priority_score(p, g_hist, g_hard)
@@ -1217,7 +1213,6 @@ with tab6:
                             p_data = row.to_dict()
                             p_name = p_data['이름']
                             
-                            # 배정 정보 복구
                             assigned = str(row.get(col_pos, '')).strip()
                             team_val = str(row.get(col_team, '')).strip()
                             
@@ -1225,7 +1220,6 @@ with tab6:
                             
                             p_data['assigned_pos'] = assigned
                             
-                            # 매치 타입(1순위/2순위 등) 추론
                             w1 = str(p_data.get('1순위','')).strip()
                             w2 = str(p_data.get('2순위','')).strip()
                             w3 = str(p_data.get('3순위','')).strip()
@@ -1236,7 +1230,6 @@ with tab6:
                             elif assigned == w3: p_data['match_type'] = '3rd'
                             else: p_data['match_type'] = 'random'
                             
-                            # 점수 복구
                             if p_name in score_map:
                                 p_data['priority_score'] = score_map[p_name][0]
                                 p_data['score_reason'] = score_map[p_name][1]
@@ -1246,20 +1239,17 @@ with tab6:
                             
                             if team_val == "A팀": team_a.append(p_data)
                             elif team_val == "B팀": team_b.append(p_data)
-                            elif assigned == "대기": team_b.append(p_data) # 대기는 임시로 B팀 리스트 뒤에 붙임
+                            elif assigned == "대기": team_b.append(p_data)
                         
                         restored_results[r] = (team_a, team_b)
                     
                     st.session_state['fair_results'] = restored_results
-                    # st.info("💾 저장된 라인업을 불러왔습니다.") # 필요하면 주석 해제
-
-            # -----------------------------------------------------------------
 
             if st.button("🎲 VEGA 우선 배정 시작 (새로 고침)"):
                 with st.spinner("계산 중..."): 
                     st.session_state['fair_results'] = generate_vega_priority_schedule(df)
                     st.success("완료!")
-                    st.rerun() # 즉시 반영
+                    st.rerun()
                     
             if 'fair_results' in st.session_state:
                 schedule_map = {name: {} for name in df['이름']}
@@ -1309,7 +1299,38 @@ with tab6:
                         if real_players:
                             count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                             count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
-                            st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**")
+                            
+                            # [NEW] 팀별 제외 포지션 계산 (리스트 딕셔너리 구조)
+                            def get_missing_pos_list(player_list):
+                                current_pos = set()
+                                for p in player_list:
+                                    if p.get('assigned_pos') and p['assigned_pos'] != "대기":
+                                        current_pos.add(p['assigned_pos'])
+                                
+                                full_set = set(POSITIONS_ALL)
+                                missing = list(full_set - current_pos)
+                                
+                                sort_order = {p: idx for idx, p in enumerate(POSITIONS_ALL)}
+                                missing.sort(key=lambda x: sort_order.get(x, 99))
+                                return missing
+
+                            missing_a = get_missing_pos_list(team_a)
+                            missing_b = get_missing_pos_list(team_b)
+                            
+                            missing_text_a = ", ".join(missing_a) if missing_a else "없음"
+                            missing_text_b = ", ".join(missing_b) if missing_b else "없음"
+
+                            # 안내 메시지 구성
+                            info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}**"
+                            if count_a != count_b:
+                                info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                            else:
+                                if missing_text_a == missing_text_b:
+                                    info_msg += f" (공통 제외: {missing_text_a})"
+                                else:
+                                    info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                            
+                            st.info(info_msg)
                             
                             st.markdown("##### ⚖️ 팀 레벨 합계 (밸런스 확인)")
                             b_col1, b_col2 = st.columns([1, 4])
@@ -1355,7 +1376,6 @@ with tab6:
             st.divider()
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             
-            # [수정] 복구된 데이터가 있으면 df에 이미 반영되어 있음
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             
             if st.button("저장 (공개)"):
@@ -1363,8 +1383,8 @@ with tab6:
                 final_df.update(edited_df)
                 update_lineup(final_df)
                 st.success("저장되었습니다!")
-                time.sleep(1.0) # 저장 메시지를 볼 시간 확보
-                st.rerun() # 화면 갱신
+                time.sleep(1.0)
+                st.rerun()
 
 # --- 탭 7: 관리자 ---
 with tab7:
