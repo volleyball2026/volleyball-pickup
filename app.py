@@ -671,11 +671,17 @@ with tab0:
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
+    # [중요] 시간 계산을 위한 라이브러리 가져오기 (이 줄이 꼭 필요합니다!)
+    from datetime import timedelta 
+
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
-        now = datetime.now()
+        
+        # [수정] 서버 시간을 한국 시간(KST)으로 보정 (UTC + 9시간)
+        now = datetime.utcnow() + timedelta(hours=9)
+        
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
@@ -689,7 +695,7 @@ with tab1:
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
         st.divider()
 
-# [수정] 마감되었을 때 오픈채팅방 안내 문구 표시
+        # [수정] 마감되었을 때 오픈채팅방 안내 문구 표시 (신청 폼 숨김)
         if is_expired:
             st.error(f"🚫 **온라인 신청이 마감되었습니다.** ({deadline_str})")
             
@@ -701,11 +707,10 @@ with tab1:
                 **시범 운영 기간**에는 마감 후에도 빈 자리가 있다면 참가가 가능할 수 있습니다.
                 참가를 원하시면 아래 버튼을 눌러 **오픈채팅방**으로 문의해주세요.
                 """)
-                # 사이드바에 있던 오픈채팅방 링크 활용
                 st.link_button("💬 운영진에게 문의하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
                 
         else:
-            # (기존 신청 폼 코드 계속...)
+            # (마감 전일 때만 신청 폼 표시)
             st.write("### 👇 참가 신청서")
             with st.form("apply_form"):
                 c1, c2 = st.columns(2)
@@ -765,13 +770,13 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (세분화: 여유/임박/마감/초과)
+            # [1] 포지션 경쟁률 (HTML 들여쓰기 제거 + 모바일 최적화)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # HTML 들여쓰기 없이 작성
+                # [중요] 들여쓰기(Indentation) 없는 HTML 코드
                 html_code = """
 <style>
 .pos-container {
@@ -803,7 +808,6 @@ with tab1:
                 for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     
-                    # [로직 변경]
                     if count >= 7:
                         status_class = "status-full" # 빨강
                         status_text = "초과"
@@ -855,9 +859,7 @@ with tab1:
                     
                     for lv in LEVELS: 
                         cnt = level_counts.get(lv, 0)
-                        # 범례용 라벨
                         legend_label = f"{lv} ({cnt}명)"
-                        # 차트 내부 표시용 텍스트 (0명이면 빈칸)
                         chart_text = f"{lv} {cnt}명" if cnt > 0 else ""
                         
                         chart_data.append({
@@ -869,22 +871,19 @@ with tab1:
                     
                     df_chart = pd.DataFrame(chart_data)
                     
-                    # Altair 차트: 도넛 + 텍스트 레이어
                     base = alt.Chart(df_chart).encode(
                         theta=alt.Theta("Count", stack=True)
                     )
                     
-                    # 1. 도넛 조각
                     pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
                         color=alt.Color("LegendLabel", title="레벨 현황", sort=None),
                         tooltip=["Level", "Count"]
                     )
                     
-                    # 2. 텍스트 (차트 안에 표시)
                     text = base.mark_text(radius=60).encode(
                         text=alt.Text("ChartText"), 
-                        order=alt.Order("Level"), # 정렬 순서 맞춤
-                        color=alt.value("black")  # 글씨색 검정
+                        order=alt.Order("Level"), 
+                        color=alt.value("black") 
                     )
                     
                     st.altair_chart(pie + text, use_container_width=True)
@@ -896,7 +895,7 @@ with tab1:
                     pickup_cnt = total_cnt - vega_cnt
                     
                     if not is_expired:
-                        diff = deadline_dt - datetime.now()
+                        diff = deadline_dt - now
                         hours = diff.seconds // 3600 + (diff.days * 24)
                         mins = (diff.seconds % 3600) // 60
                         time_msg = f"{hours}시간 {mins}분 전"
