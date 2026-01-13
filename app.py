@@ -750,35 +750,67 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (깔끔한 Metric 디자인으로 복구)
+            # [1] 포지션 경쟁률 (모바일 최적화: 커스텀 그리드)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # 4열로 깔끔하게 배치
-                m_cols = st.columns(4)
-                all_pos_list = POSITIONS_ALL
+                # HTML 생성 시작
+                html_code = """
+                <style>
+                    .pos-container {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
+                        gap: 8px;
+                        margin-bottom: 20px;
+                    }
+                    .pos-card {
+                        background-color: white;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 8px;
+                        padding: 8px 4px;
+                        text-align: center;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                    }
+                    .pos-title { font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold; }
+                    .pos-count { font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}
+                    .pos-status { font-size: 0.75em; font-weight: bold; }
+                    
+                    /* 상태별 색상 클래스 */
+                    .status-safe { color: #2E7D32; }   /* 초록 */
+                    .status-warn { color: #F57F17; }   /* 주황 */
+                    .status-full { color: #D32F2F; }   /* 빨강 */
+                </style>
+                <div class="pos-container">
+                """
                 
-                for idx, pos in enumerate(all_pos_list):
+                for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     
-                    # [로직] 1~4: 여유(초록), 5~6: 임박(회색/주의), 7~: 초과(빨강)
+                    # 상태 결정 로직
                     if count >= 7:
-                        state_msg = "초과 (경쟁)"
-                        delta_color = "inverse" # 빨강
+                        status_class = "status-full"
+                        status_text = "초과"
                     elif count >= 5:
-                        state_msg = "마감임박"
-                        delta_color = "off"     # 회색 (Streamlit 기본 스타일 활용)
+                        status_class = "status-warn"
+                        status_text = "임박"
                     else:
-                        state_msg = "여유"
-                        delta_color = "normal"  # 초록
+                        status_class = "status-safe"
+                        status_text = "여유"
                     
-                    # 디자인: st.metric 사용 (가장 깔끔함)
-                    with m_cols[idx % 4]:
-                        st.metric(label=pos, value=f"{count}명", delta=state_msg, delta_color=delta_color)
+                    # 카드 하나 추가
+                    html_code += f"""
+                    <div class="pos-card">
+                        <div class="pos-title">{pos}</div>
+                        <div class="pos-count {status_class}">{count}<span style="font-size:0.5em;">명</span></div>
+                        <div class="pos-status {status_class}">{status_text}</div>
+                    </div>
+                    """
+                
+                html_code += "</div>"
+                st.markdown(html_code, unsafe_allow_html=True)
             
-            st.write("") # 여백
             st.divider()
             
             # ---------------------------------------------------------
@@ -808,16 +840,13 @@ with tab1:
                     level_counts = df_public['레벨'].value_counts()
                     chart_data = []
                     
-                    # [수정] 0명인 레벨도 모두 포함하여 차트 데이터 생성
                     for lv in LEVELS: 
                         cnt = level_counts.get(lv, 0)
-                        # 범례 텍스트: "초급 (0명)" 형식
                         label = f"{lv} ({cnt}명)"
                         chart_data.append({"Level": lv, "Count": cnt, "Label": label})
                     
                     df_chart = pd.DataFrame(chart_data)
                     
-                    # Altair 도넛 차트
                     base = alt.Chart(df_chart).encode(
                         theta=alt.Theta("Count", stack=True)
                     )
