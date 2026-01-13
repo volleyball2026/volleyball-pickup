@@ -750,13 +750,14 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (모바일 최적화: 커스텀 그리드)
+            # [1] 포지션 경쟁률 (HTML/CSS Grid 적용 - 모바일 최적화)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # HTML 생성 시작
+                # CSS 스타일 정의 (보내주신 디자인 + 반응형 Grid)
+                # minmax(75px, 1fr) -> 화면이 좁아도 최소 75px 확보하며 가로로 나열됨
                 html_code = """
                 <style>
                     .pos-container {
@@ -773,9 +774,22 @@ with tab1:
                         text-align: center;
                         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                     }
-                    .pos-title { font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold; }
-                    .pos-count { font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}
-                    .pos-status { font-size: 0.75em; font-weight: bold; }
+                    .pos-title { 
+                        font-size: 0.85em; 
+                        color: #666; 
+                        margin-bottom: 4px; 
+                        font-weight: bold; 
+                    }
+                    .pos-count { 
+                        font-size: 1.4em; 
+                        font-weight: 900; 
+                        line-height: 1.2; 
+                        margin-bottom: 2px;
+                    }
+                    .pos-status { 
+                        font-size: 0.75em; 
+                        font-weight: bold; 
+                    }
                     
                     /* 상태별 색상 클래스 */
                     .status-safe { color: #2E7D32; }   /* 초록 */
@@ -785,10 +799,11 @@ with tab1:
                 <div class="pos-container">
                 """
                 
+                # 데이터 반복문으로 HTML 생성
                 for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     
-                    # 상태 결정 로직
+                    # 상태 결정 로직 (1~4: 여유 / 5~6: 임박 / 7~: 초과)
                     if count >= 7:
                         status_class = "status-full"
                         status_text = "초과"
@@ -799,7 +814,7 @@ with tab1:
                         status_class = "status-safe"
                         status_text = "여유"
                     
-                    # 카드 하나 추가
+                    # 카드 HTML 추가
                     html_code += f"""
                     <div class="pos-card">
                         <div class="pos-title">{pos}</div>
