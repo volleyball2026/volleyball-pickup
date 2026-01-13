@@ -7,8 +7,8 @@ import copy
 from datetime import datetime, timedelta
 import re
 import time
-import altair as alt  # 차트 시각화용
-import plotly.graph_objects as go # [NEW] 레이더 차트용 라이브러리
+import altair as alt
+import plotly.graph_objects as go 
 
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
@@ -22,19 +22,15 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
-    "2026.01.14 (Ver 2.3)": [
-        "📊 [MyPage] **개인 능력치 레이더 차트** 도입",
-        "❤️ [스탯] '실력' 대신 **'헌신(Dedication)'** 지표 신설",
+    "2026.01.14 (Ver 2.4)": [
+        "🚀 [성능] 데이터 조회 캐싱 적용 (튕김 방지)",
+        "📊 [MyPage] 개인 능력치 레이더 차트 도입",
+        "❤️ [스탯] '실력' 대신 '헌신(Dedication)' 지표 신설",
         "💾 [DB] 경기 기록 시 확정 포지션 자동 아카이빙"
     ],
     "2026.01.13 (Ver 2.2)": [
         "🕒 [기능] 마감 후 '대기/추가' 등록 모드 지원",
-        "📱 [UI] 모바일 최적화: 포지션 현황 카드 그리드 적용",
-        "🚦 [로직] 포지션 상태 세분화 & 모바일 튕김 방지 패치"
-    ],
-    "2026.01.12 (Ver 2.1)": [
-        "⚖️ [로직] '노력형 불운' 보너스 추가",
-        "👥 [로직] 인원수(6~8인)에 따른 포지션 자동 조정"
+        "📱 [UI] 모바일 최적화: 포지션 현황 카드 그리드 적용"
     ]
 }
 
@@ -125,7 +121,6 @@ def get_current_game_info():
         if all_games: return all_games[-1]
     return None
 
-# [수정] 기록 저장 시 확정 포지션도 함께 저장
 def archive_current_game():
     src_sheet = get_sheet_instance(SHEET_APPLICANTS)
     dst_sheet = get_sheet_instance(SHEET_HISTORY)
@@ -230,6 +225,8 @@ def add_to_blacklist(name, phone, reason):
     sheet = get_sheet_instance(SHEET_BLACKLIST)
     if sheet: sheet.append_row([name, normalize_phone(phone), reason, datetime.now().strftime("%Y-%m-%d")])
 
+# [수정] 캐싱 적용 (60초) -> 튕김 방지 핵심
+@st.cache_data(ttl=60)
 def get_my_history(name, phone):
     sheet = get_sheet_instance(SHEET_HISTORY)
     history = []
@@ -298,7 +295,8 @@ def load_suggestions():
     if sheet: return sheet.get_all_records()
     return []
 
-# [NEW] 개인별 MVP 통계 조회
+# [수정] 캐싱 적용 (60초) -> 튕김 방지 핵심
+@st.cache_data(ttl=60)
 def get_my_mvp_stats(name, phone):
     sheet = get_sheet_instance(SHEET_MVP)
     received = 0
@@ -306,7 +304,6 @@ def get_my_mvp_stats(name, phone):
     if sheet:
         data = sheet.get_all_records()
         clean_phone = normalize_phone(phone)
-        
         for row in data:
             if row.get('MVP후보') == name: received += 1
             if row.get('투표자이름') == name and normalize_phone(row.get('투표자연락처')) == clean_phone: voted += 1
@@ -675,7 +672,6 @@ with tab0:
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
-    # [NEW] 성공 메시지 상태 관리 (화면이 깜빡여도 메시지 유지)
     if 'reg_success' not in st.session_state: st.session_state['reg_success'] = False
     if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
     if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
@@ -684,8 +680,6 @@ with tab1:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
-        
-        # 서버 시간을 한국 시간(KST)으로 보정
         now = datetime.utcnow() + timedelta(hours=9)
         is_expired = now > deadline_dt
 
@@ -699,15 +693,11 @@ with tab1:
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
         st.divider()
 
-        # [NEW] 성공 메시지 표시 영역
         if st.session_state['reg_success']:
             msg_name = st.session_state['reg_name']
             if st.session_state['reg_is_late']:
                 st.success(f"✅ {msg_name}님, **대기(추가) 명단**에 등록되었습니다!")
-                st.markdown("""
-                📢 **잠깐! 아직 확정이 아닙니다.**
-                마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.
-                """)
+                st.markdown("""📢 **잠깐! 아직 확정이 아닙니다.**\n마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.""")
                 st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
             else:
                 st.success(f"✅ {msg_name}님 신청 완료!")
@@ -718,7 +708,7 @@ with tab1:
             st.divider()
 
         if is_expired:
-            st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.\n\n신청서를 작성하시면 **대기 명단**에 등록되며, **반드시 오픈채팅방으로 연락**하여 참가 가능 여부를 확인받으셔야 합니다.")
+            st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.")
         
         st.write("### 👇 참가 신청서")
         with st.form("apply_form"):
@@ -727,23 +717,15 @@ with tab1:
             with c2: phone = st.text_input("연락처", placeholder="01012345678")
             
             with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
-                st.markdown("""
-                - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
-                - **초급**: 게임 경험은 적지만 참여 가능
-                - **중급**: 전국대회에 무리 없이 참여할 수 있는 수준
-                - **상급**: 전국대회 상위 무대에서도 원활히 활동 가능
-                - **최상급**: 전국대회 최상위권, 선출 준하는 실력
-                """)
+                st.markdown("- **입문**: 기본기 부족\n- **초급**: 경험 적음\n- **중급**: 전국대회 가능\n- **상급**: 전국대회 상위\n- **최상급**: 선출 준함")
             
             is_vega = st.checkbox("순천VEGA 회원 (우선권)")
-            
             lc1, lc2 = st.columns([2, 1])
             with lc1: level = st.selectbox("참가자 레벨", LEVELS)
             with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
             
             st.markdown("---")
-            if not is_expired:
-                st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
+            if not is_expired: st.info("📢 **주의:** 1순위 경쟁 시 점수에 따라 밀릴 수 있습니다.")
             
             p1, p2, p3 = st.columns(3)
             with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
@@ -755,7 +737,7 @@ with tab1:
             if st.form_submit_button(submit_label):
                 if name and phone:
                     is_black, reason = check_blacklist(name, phone)
-                    if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
+                    if is_black: st.error(f"🚨 신청 불가: {reason}")
                     else:
                         final_name = f"[VEGA] {name}" if is_vega else name
                         try:
@@ -766,9 +748,9 @@ with tab1:
                             st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"❌ 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(오류 내용: {str(e)})")
+                            st.error(f"❌ 저장 중 오류: {str(e)}")
                 else: 
-                    st.error("필수 입력 누락: 이름과 연락처를 모두 입력해주세요.")
+                    st.error("필수 입력 누락")
                     st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
         
         with st.expander("🗑️ 신청 취소"):
@@ -860,7 +842,6 @@ with tab1:
                         time_msg = "마감됨"
                         time_color = "red"
                     st.markdown(f"""- **총 인원**: **{total_cnt}명**\n- <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>\n- **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>""", unsafe_allow_html=True)
-                    
         else: st.info("아직 신청자가 없습니다.")
     else: st.warning("모집 중인 게임이 없습니다.")
 
@@ -961,70 +942,50 @@ with tab3:
 
     st.header("📊 My Player Card")
     
-    # 세션 상태 초기화
     if 'my_name' not in st.session_state: st.session_state['my_name'] = ""
     if 'my_phone' not in st.session_state: st.session_state['my_phone'] = ""
 
+    # [수정] 폼에서 캐싱된 데이터를 호출하여 부하 감소
     with st.form("my_history"):
         c1, c2 = st.columns(2)
         with c1: input_name = st.text_input("이름", value=st.session_state['my_name'])
         with c2: input_phone = st.text_input("연락처", value=st.session_state['my_phone'])
         
-        # [수정] st.rerun() 삭제 -> 튕김 현상 해결
+        # [중요] st.rerun 삭제 + 토스트 추가
         if st.form_submit_button("조회 & 분석"):
             st.session_state['my_name'] = input_name
             st.session_state['my_phone'] = input_phone
-            st.toast(f"{input_name}님 기록을 조회합니다.", icon="🔍") # [NEW] 알림 추가
+            st.toast(f"{input_name}님 기록을 조회합니다.", icon="🔍")
 
-    # 조회된 정보가 있으면 결과 표시 (rerun 없어도 바로 실행됨)
     if st.session_state['my_name'] and st.session_state['my_phone']:
         my_name = st.session_state['my_name']
         my_phone = st.session_state['my_phone']
         clean_phone = normalize_phone(my_phone)
         
-        # 1. 데이터 수집
+        # [수정] 캐싱된 함수 호출
         hist = get_my_history(my_name, my_phone)
         mvp_received, mvp_voted = get_my_mvp_stats(my_name, my_phone)
-        
-        # 현재 신청 정보 확인
         cur_apps = load_applicants()
         my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
         
-        # 2. 스탯 계산 (Gamification Logic)
-        # (1) 참여율: 20회 만점
         score_part = min(len(hist) * 5, 100)
-        
-        # (2) 매너: MVP 10회 만점
         score_manner = min(mvp_received * 10, 100)
-        
-        # (3) 다양성: 경험한 포지션(신청 기준) 수 * 15점
         unique_pos = set([str(h.get('1순위', '')).strip() for h in hist if h.get('1순위')])
         score_div = min(len(unique_pos) * 15, 100)
-        
-        # (4) 사교성: 투표 참여 20회 만점
         score_social = min(mvp_voted * 5, 100)
         
-        # (5) 헌신: 내가 원하지 않은 포지션을 수행한 횟수
         dedication_count = 0
         for h in hist:
             wish = str(h.get('1순위', '')).strip()
             assigned = str(h.get('확정포지션', '')).strip()
-            
             if assigned:
-                if assigned == '대기': dedication_count += 2 # 대기는 2점
-                elif assigned != wish: dedication_count += 1 # 1순위 아니면 1점
+                if assigned == '대기': dedication_count += 2 
+                elif assigned != wish: dedication_count += 1 
         
-        score_dedic = min(dedication_count * 15, 100)
+        score_dedic = min(dedication_count * 15, 100) 
 
-        stats = {
-            'participation': score_part,
-            'manner': score_manner,
-            'dedication': score_dedic,
-            'diversity': score_div,
-            'social': score_social
-        }
+        stats = {'participation': score_part, 'manner': score_manner, 'dedication': score_dedic, 'diversity': score_div, 'social': score_social}
 
-        # 3. 화면 표시
         st.divider()
         col_chart, col_info = st.columns([1.2, 1])
         
@@ -1032,9 +993,10 @@ with tab3:
             st.markdown(f"### 🏐 {my_name}님의 스탯")
             try:
                 fig = draw_radar_chart(stats)
-                st.plotly_chart(fig, use_container_width=True)
+                # [수정] 모바일 메모리 절약을 위한 staticPlot 설정
+                st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
             except Exception as e:
-                st.error("차트 로딩 중 오류가 발생했습니다. (잠시 후 다시 시도해주세요)")
+                st.error("차트 로딩 중 오류가 발생했습니다.")
             
         with col_info:
             st.markdown("#### 📌 요약 리포트")
@@ -1046,22 +1008,17 @@ with tab3:
             if my_cur:
                 status = "✅ 참가확인" if str(my_cur[0].get('입금')).upper() == 'O' else "⏳ 입금확인중"
                 st.info(f"이번 주: **{status}**")
-            else:
-                st.caption("이번 주 신청 내역이 없습니다.")
+            else: st.caption("이번 주 신청 내역이 없습니다.")
 
-        # 4. 과거 기록 상세
         with st.expander("📜 과거 경기 기록 전체 보기"):
             if hist:
                 df_hist = pd.DataFrame(hist)
-                # 보여줄 컬럼 선택
                 cols_to_show = ['일시', '게임제목', '1순위', '레벨']
-                if '확정포지션' in df_hist.columns:
-                    cols_to_show.append('확정포지션')
-                
+                if '확정포지션' in df_hist.columns: cols_to_show.append('확정포지션')
                 valid_cols = [c for c in cols_to_show if c in df_hist.columns]
                 st.dataframe(df_hist[valid_cols], hide_index=True, use_container_width=True)
-            else:
-                st.info("아직 기록된 경기가 없습니다.")
+            else: st.info("아직 기록된 경기가 없습니다.")
+
 # --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
@@ -1162,8 +1119,7 @@ with tab6:
                 if pw2 == ADMIN_PASSWORD:
                     st.session_state['lineup_admin_logged_in'] = True
                     lineup_auth.empty()
-                else:
-                    st.error("비밀번호 불일치")
+                else: st.error("비밀번호 불일치")
     
     if st.session_state['lineup_admin_logged_in']:
         
