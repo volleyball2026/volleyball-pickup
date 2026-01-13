@@ -750,14 +750,13 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (들여쓰기 제거 버전)
+            # [1] 포지션 경쟁률 (세분화: 여유/임박/마감/초과)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # [중요] HTML 문자열 생성 시 들여쓰기(Indentation)를 절대 하지 마세요.
-                # 왼쪽 벽에 붙여야 Markdown이 코드로 인식하지 않습니다.
+                # HTML 들여쓰기 없이 작성
                 html_code = """
 <style>
 .pos-container {
@@ -774,43 +773,35 @@ with tab1:
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-.pos-title { 
-    font-size: 0.85em; 
-    color: #666; 
-    margin-bottom: 4px; 
-    font-weight: bold; 
-}
-.pos-count { 
-    font-size: 1.4em; 
-    font-weight: 900; 
-    line-height: 1.2; 
-    margin-bottom: 2px;
-}
-.pos-status { 
-    font-size: 0.75em; 
-    font-weight: bold; 
-}
-.status-safe { color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;}
-.status-warn { color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;}
-.status-full { color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;}
+.pos-title { font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold; }
+.pos-count { font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px; }
+.pos-status { font-size: 0.75em; font-weight: bold; }
+
+/* 상태별 스타일 */
+.status-safe { color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
+.status-warn { color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
+.status-max { color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
+.status-full { color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
 </style>
 <div class="pos-container">
 """
-                
                 for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     
+                    # [로직 변경]
                     if count >= 7:
-                        status_class = "status-full"
+                        status_class = "status-full" # 빨강
                         status_text = "초과"
-                    elif count >= 5:
-                        status_class = "status-warn"
+                    elif count == 6:
+                        status_class = "status-max"  # 파랑 (마감)
+                        status_text = "마감"
+                    elif count == 5:
+                        status_class = "status-warn" # 주황
                         status_text = "임박"
                     else:
-                        status_class = "status-safe"
+                        status_class = "status-safe" # 초록
                         status_text = "여유"
                     
-                    # 여기도 들여쓰기 없이 한 줄로 작성하거나 왼쪽 벽에 붙입니다.
                     html_code += f"""<div class="pos-card">
 <div class="pos-title">{pos}</div>
 <div class="pos-count" style="color:#333;">{count}<span style="font-size:0.5em; font-weight:normal; color:#888;">명</span></div>
@@ -849,19 +840,39 @@ with tab1:
                     
                     for lv in LEVELS: 
                         cnt = level_counts.get(lv, 0)
-                        label = f"{lv} ({cnt}명)"
-                        chart_data.append({"Level": lv, "Count": cnt, "Label": label})
+                        # 범례용 라벨
+                        legend_label = f"{lv} ({cnt}명)"
+                        # 차트 내부 표시용 텍스트 (0명이면 빈칸)
+                        chart_text = f"{lv} {cnt}명" if cnt > 0 else ""
+                        
+                        chart_data.append({
+                            "Level": lv, 
+                            "Count": cnt, 
+                            "LegendLabel": legend_label,
+                            "ChartText": chart_text
+                        })
                     
                     df_chart = pd.DataFrame(chart_data)
                     
+                    # Altair 차트: 도넛 + 텍스트 레이어
                     base = alt.Chart(df_chart).encode(
                         theta=alt.Theta("Count", stack=True)
                     )
+                    
+                    # 1. 도넛 조각
                     pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
-                        color=alt.Color("Label", title="레벨 현황", sort=None), 
+                        color=alt.Color("LegendLabel", title="레벨 현황", sort=None),
                         tooltip=["Level", "Count"]
                     )
-                    st.altair_chart(pie, use_container_width=True)
+                    
+                    # 2. 텍스트 (차트 안에 표시)
+                    text = base.mark_text(radius=60).encode(
+                        text=alt.Text("ChartText"), 
+                        order=alt.Order("Level"), # 정렬 순서 맞춤
+                        color=alt.value("black")  # 글씨색 검정
+                    )
+                    
+                    st.altair_chart(pie + text, use_container_width=True)
 
                 st.markdown("##### 📌 요약 정보")
                 with st.container(border=True):
