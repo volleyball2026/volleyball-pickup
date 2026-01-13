@@ -672,6 +672,11 @@ with tab0:
 with tab1:
     from datetime import timedelta 
 
+    # [NEW] 성공 메시지 상태 관리 (화면이 깜빡여도 메시지 유지)
+    if 'reg_success' not in st.session_state: st.session_state['reg_success'] = False
+    if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
+    if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
+
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -691,7 +696,26 @@ with tab1:
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
         st.divider()
 
-        # [로직 변경] 마감 후에도 폼은 보여주되, 경고 문구 추가
+        # [NEW] 성공 메시지 표시 영역 (상태가 True일 때만 표시)
+        if st.session_state['reg_success']:
+            msg_name = st.session_state['reg_name']
+            if st.session_state['reg_is_late']:
+                st.success(f"✅ {msg_name}님, **대기(추가) 명단**에 등록되었습니다!")
+                st.markdown("""
+                📢 **잠깐! 아직 확정이 아닙니다.**
+                마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.
+                """)
+                st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
+            else:
+                st.success(f"✅ {msg_name}님 신청 완료!")
+            
+            # 닫기 버튼 (누르면 상태 초기화)
+            if st.button("확인 (메시지 닫기)"):
+                st.session_state['reg_success'] = False
+                st.rerun()
+            st.divider()
+
+        # [로직] 마감 후 경고 문구
         if is_expired:
             st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.\n\n신청서를 작성하시면 **대기 명단**에 등록되며, **반드시 오픈채팅방으로 연락**하여 참가 가능 여부를 확인받으셔야 합니다.")
         
@@ -725,27 +749,34 @@ with tab1:
             with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
             with p3: pos3 = st.selectbox("3순위 (수비/속공)", ["선택 안함"] + POSITIONS_3RD)
             
-            # [버튼 텍스트 변경] 마감 여부에 따라 다르게 표시
             submit_label = "대기/추가 등록하기 (마감됨)" if is_expired else "신청하기"
             
+            # [핵심 수정] 폼 제출 로직 강화
             if st.form_submit_button(submit_label):
                 if name and phone:
                     is_black, reason = check_blacklist(name, phone)
                     if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
                     else:
                         final_name = f"[VEGA] {name}" if is_vega else name
-                        add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
                         
-                        # [성공 메시지 분기] 마감 후라면 추가 행동 유도
-                        if is_expired:
-                            st.success(f"✅ {name}님, **대기(추가) 명단**에 등록되었습니다!")
-                            st.markdown("""
-                            📢 **잠깐! 아직 확정이 아닙니다.**
-                            마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.
-                            """)
-                            st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
-                        else:
-                            st.success(f"✅ {name}님 신청 완료!")
+                        # [안전장치] 저장 중 에러가 나도 앱이 꺼지지 않도록 처리
+                        try:
+                            add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
+                            
+                            # 성공 상태 저장
+                            st.session_state['reg_success'] = True
+                            st.session_state['reg_name'] = name
+                            st.session_state['reg_is_late'] = is_expired
+                            
+                            # [Toast] 탭이 튕겨도 우측 하단에 알림 뜸
+                            st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
+                            
+                            # 화면 갱신 (성공 메시지를 띄우기 위해)
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"❌ 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(오류 내용: {str(e)})")
+                            
                 else: st.error("필수 입력 누락")
         
         with st.expander("🗑️ 신청 취소"):
@@ -758,7 +789,9 @@ with tab1:
                     if not suc:
                         suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
                     
-                    if suc: st.success(msg)
+                    if suc: 
+                        st.success(msg)
+                        st.toast("🗑️ 취소되었습니다.") # 취소도 토스트 알림 추가
                     else: st.error(msg)
 
         st.divider()
@@ -775,7 +808,6 @@ with tab1:
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # HTML 들여쓰기 없이 작성 (디자인 유지)
                 html_code = """
 <style>
 .pos-container {
