@@ -46,7 +46,7 @@ LEVELS = ["입문", "초급", "중급", "상급", "최상급"]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
-# --- [뱃지 정의] ---
+# --- [뱃지 정의] (새로 추가할 코드) ---
 BADGE_DEFINITIONS = {
     "commander": {"icon": "🧠", "name": "코트의 사령관", "desc": "세터 5회 이상 수행"},
     "thunder": {"icon": "🚀", "name": "천둥 스파이커", "desc": "공격수(레/라/속) 10회 이상"},
@@ -59,6 +59,72 @@ BADGE_DEFINITIONS = {
     "legend": {"icon": "🏅", "name": "터줏대감", "desc": "총 참여 30회 돌파"},
     "levelup": {"icon": "🔥", "name": "성장왕", "desc": "초기보다 레벨 상승"}
 }
+
+# --- [뱃지 계산용 함수] (기능 함수 섹션에 추가) ---
+@st.cache_data(ttl=60)
+def load_all_history():
+    sheet = get_sheet_instance(SHEET_HISTORY)
+    if sheet: return sheet.get_all_records()
+    return []
+
+@st.cache_data(ttl=60)
+def load_all_mvp_records():
+    sheet = get_sheet_instance(SHEET_MVP)
+    if sheet: return sheet.get_all_records()
+    return []
+
+def calculate_badges(name, phone, all_hist, all_mvp, current_level_str=""):
+    badges = []
+    clean_phone = normalize_phone(phone)
+    
+    # 1. 개인 기록 필터링
+    my_hist = [h for h in all_hist if h.get('이름') == name and normalize_phone(h.get('연락처')) == clean_phone]
+    
+    # 2. MVP 기록 필터링
+    my_mvp_received = len([m for m in all_mvp if m.get('MVP후보') == name])
+    my_mvp_voted = len([m for m in all_mvp if m.get('투표자이름') == name and normalize_phone(m.get('투표자연락처')) == clean_phone])
+    
+    # [조건 1] 🏐 코트의 사령관 (세터 5회)
+    setter_cnt = len([h for h in my_hist if '세터' in str(h.get('1순위', ''))])
+    if setter_cnt >= 5: badges.append("commander")
+    
+    # [조건 2] 🚀 천둥 스파이커 (공격 10회)
+    attacker_cnt = len([h for h in my_hist if any(x in str(h.get('1순위', '')) for x in ['레프트', '라이트', '속공'])])
+    if attacker_cnt >= 10: badges.append("thunder")
+    
+    # [조건 3] 🌈 올라운더 (5개 포지션)
+    pos_types = set([str(h.get('1순위', '')).strip() for h in my_hist if h.get('1순위')])
+    if len(pos_types) >= 5: badges.append("all_rounder")
+    
+    # [조건 4] ⭐ 인기스타 (MVP 10표)
+    if my_mvp_received >= 10: badges.append("celeb")
+    
+    # [조건 5] 🦅 독수리의 눈 (투표 10회)
+    if my_mvp_voted >= 10: badges.append("scouter")
+    
+    # [조건 6] 🌱 슈퍼 루키 (5경기 내 MVP 수상)
+    if 0 < len(my_hist) <= 5 and my_mvp_received >= 1: badges.append("rookie")
+    
+    # [조건 7] 👼 수호천사 (대기 3회)
+    wait_cnt = 0
+    for h in my_hist:
+        if str(h.get('확정포지션', '')).strip() == '대기': wait_cnt += 1
+    if wait_cnt >= 3: badges.append("guardian")
+    
+    # [조건 8] 🧱 통곡의 벽 (센터 5회)
+    center_cnt = len([h for h in my_hist if any(x in str(h.get('1순위', '')) for x in ['센터백', '속공'])])
+    if center_cnt >= 5: badges.append("iron_wall")
+    
+    # [조건 9] 🏅 터줏대감 (30회)
+    if len(my_hist) >= 30: badges.append("legend")
+    
+    # [조건 10] 🔥 성장왕 (레벨 상승)
+    if my_hist and current_level_str:
+        first_level = LEVEL_MAP.get(my_hist[0].get('레벨', '입문').split(" ")[0], 1)
+        curr_level = LEVEL_MAP.get(current_level_str.split(" ")[0], 1)
+        if curr_level > first_level: badges.append("levelup")
+        
+    return badges
 
 # --- [세션 상태 초기화] ---
 if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
@@ -922,25 +988,35 @@ with tab3:
         score_dedic = min(dedication_count * 15, 100) 
         stats = {'participation': score_part, 'manner': score_manner, 'dedication': score_dedic, 'diversity': score_div, 'social': score_social}
 
-        # 뱃지 계산
+        # [NEW] 뱃지 계산 로직 호출
         all_hist = load_all_history()
         all_mvp = load_all_mvp_records()
         my_level = my_cur[0].get('레벨', '') if my_cur else ""
         my_badges = calculate_badges(my_name, clean_phone, all_hist, all_mvp, my_level)
 
         st.divider()
-        # 1. 뱃지 진열장 (NEW)
+        
+        # [NEW] 🏆 뱃지 진열장 표시 영역
         st.subheader("🏆 나의 트로피 진열장")
         if my_badges:
             b_cols = st.columns(5)
             for i, b_code in enumerate(my_badges):
                 b_info = BADGE_DEFINITIONS.get(b_code, {})
                 with b_cols[i % 5]:
-                    st.markdown(f"<div style='text-align:center; border:1px solid #eee; border-radius:10px; padding:10px; background-color:#f9f9f9;'> <div style='font-size:30px;'>{b_info.get('icon','')}</div> <div style='font-weight:bold; font-size:12px;'>{b_info.get('name','')}</div> <div style='font-size:10px; color:gray;'>{b_info.get('desc','')}</div> </div>", unsafe_allow_html=True)
-        else: st.info("아직 획득한 뱃지가 없습니다. 열심히 활동해서 모아보세요!")
+                    st.markdown(f"""
+                    <div style='text-align:center; border:1px solid #eee; border-radius:10px; padding:10px; background-color:#f9f9f9; height:100px;'>
+                        <div style='font-size:30px;'>{b_info.get('icon','')}</div>
+                        <div style='font-weight:bold; font-size:12px; margin-top:5px;'>{b_info.get('name','')}</div>
+                        <div style='font-size:10px; color:gray;'>{b_info.get('desc','')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            # 뱃지가 없어도 이 메시지가 떠야 정상입니다!
+            st.info("👋 아직 획득한 뱃지가 없습니다. 꾸준한 활동으로 트로피를 모아보세요!")
+            
         st.divider()
 
-        # 2. 레이더 차트
+        # 레이더 차트 및 나머지 정보
         col_chart, col_info = st.columns([1.2, 1])
         with col_chart:
             st.markdown(f"### 🏐 {my_name}님의 스탯")
@@ -968,7 +1044,6 @@ with tab3:
                 valid_cols = [c for c in cols_to_show if c in df_hist.columns]
                 st.dataframe(df_hist[valid_cols], hide_index=True, use_container_width=True)
             else: st.info("아직 기록된 경기가 없습니다.")
-
 # --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
