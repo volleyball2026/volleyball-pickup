@@ -750,60 +750,59 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (HTML/CSS Grid 적용 - 모바일 최적화)
+            # [1] 포지션 경쟁률 (모바일 최적화: 카드 그리드)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # CSS 스타일 정의 (보내주신 디자인 + 반응형 Grid)
-                # minmax(75px, 1fr) -> 화면이 좁아도 최소 75px 확보하며 가로로 나열됨
+                # [중요] HTML 문자열 내의 들여쓰기를 제거하여 왼쪽으로 밀착시킴
+                # 이렇게 해야 Streamlit이 코드블록으로 인식하지 않고 HTML로 렌더링함
                 html_code = """
-                <style>
-                    .pos-container {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
-                        gap: 8px;
-                        margin-bottom: 20px;
-                    }
-                    .pos-card {
-                        background-color: white;
-                        border: 1px solid #e0e0e0;
-                        border-radius: 8px;
-                        padding: 8px 4px;
-                        text-align: center;
-                        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-                    }
-                    .pos-title { 
-                        font-size: 0.85em; 
-                        color: #666; 
-                        margin-bottom: 4px; 
-                        font-weight: bold; 
-                    }
-                    .pos-count { 
-                        font-size: 1.4em; 
-                        font-weight: 900; 
-                        line-height: 1.2; 
-                        margin-bottom: 2px;
-                    }
-                    .pos-status { 
-                        font-size: 0.75em; 
-                        font-weight: bold; 
-                    }
-                    
-                    /* 상태별 색상 클래스 */
-                    .status-safe { color: #2E7D32; }   /* 초록 */
-                    .status-warn { color: #F57F17; }   /* 주황 */
-                    .status-full { color: #D32F2F; }   /* 빨강 */
-                </style>
-                <div class="pos-container">
-                """
+<style>
+    .pos-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+    .pos-card {
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 8px 4px;
+        text-align: center;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .pos-title { 
+        font-size: 0.85em; 
+        color: #666; 
+        margin-bottom: 4px; 
+        font-weight: bold; 
+    }
+    .pos-count { 
+        font-size: 1.4em; 
+        font-weight: 900; 
+        line-height: 1.2; 
+        margin-bottom: 2px;
+    }
+    .pos-status { 
+        font-size: 0.75em; 
+        font-weight: bold; 
+    }
+    
+    /* 상태별 색상 클래스 */
+    .status-safe { color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;}
+    .status-warn { color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;}
+    .status-full { color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;}
+</style>
+<div class="pos-container">
+"""
                 
-                # 데이터 반복문으로 HTML 생성
                 for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     
-                    # 상태 결정 로직 (1~4: 여유 / 5~6: 임박 / 7~: 초과)
+                    # 상태 결정 로직
                     if count >= 7:
                         status_class = "status-full"
                         status_text = "초과"
@@ -814,14 +813,14 @@ with tab1:
                         status_class = "status-safe"
                         status_text = "여유"
                     
-                    # 카드 HTML 추가
+                    # f-string 내부도 들여쓰기 최소화
                     html_code += f"""
-                    <div class="pos-card">
-                        <div class="pos-title">{pos}</div>
-                        <div class="pos-count {status_class}">{count}<span style="font-size:0.5em;">명</span></div>
-                        <div class="pos-status {status_class}">{status_text}</div>
-                    </div>
-                    """
+    <div class="pos-card">
+        <div class="pos-title">{pos}</div>
+        <div class="pos-count" style="color:#333;">{count}<span style="font-size:0.5em; font-weight:normal; color:#888;">명</span></div>
+        <div class="pos-status"><span class="{status_class}">{status_text}</span></div>
+    </div>
+"""
                 
                 html_code += "</div>"
                 st.markdown(html_code, unsafe_allow_html=True)
