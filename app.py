@@ -768,7 +768,7 @@ with tab1:
                             st.session_state['reg_name'] = name
                             st.session_state['reg_is_late'] = is_expired
                             
-                            # [Toast] 탭이 튕겨도 우측 하단에 알림 뜸
+                            # [Toast] 성공 알림 팝업
                             st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
                             
                             # 화면 갱신 (성공 메시지를 띄우기 위해)
@@ -777,7 +777,10 @@ with tab1:
                         except Exception as e:
                             st.error(f"❌ 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(오류 내용: {str(e)})")
                             
-                else: st.error("필수 입력 누락")
+                else: 
+                    # [수정] 필수 입력 누락 시 토스트 메시지도 같이 띄움
+                    st.error("필수 입력 누락: 이름과 연락처를 모두 입력해주세요.")
+                    st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
         
         with st.expander("🗑️ 신청 취소"):
             with st.form("cancel"):
@@ -791,7 +794,7 @@ with tab1:
                     
                     if suc: 
                         st.success(msg)
-                        st.toast("🗑️ 취소되었습니다.") # 취소도 토스트 알림 추가
+                        st.toast("🗑️ 취소되었습니다.") 
                     else: st.error(msg)
 
         st.divider()
