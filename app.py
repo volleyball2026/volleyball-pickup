@@ -7,6 +7,7 @@ import copy
 from datetime import datetime
 import re
 import time
+import altair as alt  # [추가] 차트 시각화용 라이브러리
 
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
@@ -674,7 +675,8 @@ with tab1:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
-        is_expired = datetime.now() > deadline_dt
+        now = datetime.now()
+        is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
         c1, c2 = st.columns(2)
@@ -742,37 +744,121 @@ with tab1:
         st.divider()
         st.subheader("📊 실시간 참가 신청 현황")
         applicants = load_applicants()
+        
         if applicants:
             df_public = pd.DataFrame(applicants)
-            st.markdown("##### 🚦 포지션 경쟁률")
-            if '1순위' in df_public.columns:
-                counts = df_public['1순위'].value_counts()
-                MAX_SLOTS = 6 
-                cols = st.columns(4)
-                for idx, (pos, count) in enumerate(counts.items()):
-                    with cols[idx % 4]:
-                        if count > MAX_SLOTS: 
-                            st.metric(label=pos, value=f"{count}명", delta="초과!", delta_color="inverse")
-                        elif count == MAX_SLOTS:
-                            st.metric(label=pos, value=f"{count}명", delta="마감 임박", delta_color="off")
-                        else: 
-                            st.metric(label=pos, value=f"{count}명", delta="여유")
             
-            st.divider()
-            st.markdown("##### 📋 신청자 명단")
-            if '입금' not in df_public.columns: df_public['입금'] = "X"
-            df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 참가확인" if str(x).strip().upper() == "O" else "-")
+            # [레이아웃 분할] 왼쪽: 명단(70%), 오른쪽: 대시보드(30%)
+            col_list, col_dashboard = st.columns([2.2, 1])
             
-            if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
-            if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
-            
-            if '비고' not in df_public.columns: df_public['비고'] = ""
-            
-            show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
-            real_cols = [c for c in show_cols if c in df_public.columns]
-            st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True)
-            st.caption("📢 **유의사항:** 참가 확정 후 불참 시에는 꼭 **[신청 취소]**를 해주세요. \n"
-                       "연락 없이 불참(No-Show)하는 경우가 반복되면, 원활한 운영을 위해 **향후 참가 신청이 제한**될 수 있습니다.")
+            # 1. 왼쪽 영역: 신청자 명단
+            with col_list:
+                st.markdown("##### 📋 신청자 명단")
+                if '입금' not in df_public.columns: df_public['입금'] = "X"
+                df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 확인" if str(x).strip().upper() == "O" else "-")
+                
+                if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
+                if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
+                if '비고' not in df_public.columns: df_public['비고'] = ""
+                
+                show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
+                real_cols = [c for c in show_cols if c in df_public.columns]
+                
+                # 높이를 충분히 주어 스크롤 없이 최대한 보이게 함
+                st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=600)
+                st.caption("📢 **유의사항:** 불참 시 꼭 [신청 취소]를 해주세요. 무단 불참(No-Show)은 향후 참가가 제한될 수 있습니다.")
+
+            # 2. 오른쪽 영역: 실시간 대시보드
+            with col_dashboard:
+                # (1) 포지션별 마감 현황 (신호등)
+                st.markdown("##### 🚦 포지션 경쟁률")
+                if '1순위' in df_public.columns:
+                    pos_counts = df_public['1순위'].value_counts()
+                    # 포지션 순서 정렬 (설정된 순서대로)
+                    sorted_pos = [p for p in POSITIONS_ALL if p in pos_counts.index]
+                    other_pos = [p for p in pos_counts.index if p not in POSITIONS_ALL]
+                    
+                    with st.container(border=True):
+                        for pos in sorted_pos + other_pos:
+                            count = pos_counts[pos]
+                            # 경쟁률 기준 (예: 2명 이상이면 과열)
+                            # 픽업 특성상 포지션별 1~2명이 정원이므로 색상 구분
+                            color = "green"
+                            msg = "여유"
+                            if count >= 3: 
+                                color = "red"
+                                msg = "초과!"
+                            elif count >= 2: 
+                                color = "orange"
+                                msg = "마감임박"
+                            
+                            # 커스텀 HTML로 프로그레스 바 느낌 내기
+                            st.markdown(f"""
+                            <div style="margin-bottom: 8px;">
+                                <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold;">
+                                    <span>{pos}</span>
+                                    <span style="color:{color};">{count}명 ({msg})</span>
+                                </div>
+                                <div style="background-color:#eee; width:100%; height:8px; border-radius:4px;">
+                                    <div style="background-color:{color}; width:{min(count*33, 100)}%; height:100%; border-radius:4px;"></div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                st.write("") # 여백
+
+                # (2) 레벨 분포 (도넛 차트)
+                st.markdown("##### 🍰 레벨 분포")
+                if '레벨' in df_public.columns:
+                    level_counts = df_public['레벨'].value_counts().reset_index()
+                    level_counts.columns = ['Level', 'Count']
+                    
+                    # Altair 도넛 차트
+                    base = alt.Chart(level_counts).encode(
+                        theta=alt.Theta("Count", stack=True)
+                    )
+                    pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
+                        color=alt.Color("Level", legend=None), # 범례는 아래 텍스트로 대체하거나 공간 절약
+                        tooltip=["Level", "Count"]
+                    )
+                    text = base.mark_text(radius=95).encode(
+                        text=alt.Text("Count"),
+                        order=alt.Order("Level"),
+                        color=alt.value("black")  
+                    )
+                    st.altair_chart(pie + text, use_container_width=True)
+                    
+                    # 텍스트로도 비율 표시
+                    total_n = len(df_public)
+                    top_lv = level_counts.iloc[0]
+                    st.caption(f"💡 **{top_lv['Level']}** 등급이 {top_lv['Count']}명({int(top_lv['Count']/total_n*100)}%)으로 가장 많습니다.")
+
+                st.write("") 
+
+                # (3) 참가 신청 요약
+                st.markdown("##### 📌 요약 정보")
+                with st.container(border=True):
+                    total_cnt = len(df_public)
+                    vega_cnt = len([n for n in df_public['이름'] if "[VEGA]" in str(n)])
+                    pickup_cnt = total_cnt - vega_cnt
+                    
+                    # 남은 시간 계산
+                    if not is_expired:
+                        diff = deadline_dt - datetime.now()
+                        hours = diff.seconds // 3600 + (diff.days * 24)
+                        mins = (diff.seconds % 3600) // 60
+                        time_msg = f"{hours}시간 {mins}분 전"
+                        time_color = "blue"
+                    else:
+                        time_msg = "마감됨"
+                        time_color = "red"
+
+                    st.markdown(f"""
+                    - **총 인원**: **{total_cnt}명**
+                    - <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>
+                    - **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>
+                    """, unsafe_allow_html=True)
+                    
         else: st.info("아직 신청자가 없습니다.")
     else: st.warning("모집 중인 게임이 없습니다.")
 
