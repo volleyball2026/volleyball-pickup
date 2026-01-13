@@ -954,13 +954,43 @@ with tab2:
                     if not playing.empty:
                         real_players = playing[playing[col_pos] != "대기"]
                         if not real_players.empty:
-                            count_a = len(real_players[real_players[col_team]=="A팀"])
-                            count_b = len(real_players[real_players[col_team]=="B팀"])
-                            assigned_set = set(real_players[col_pos].unique())
-                            full_set = set(POSITIONS_ALL)
-                            missing = list(full_set - assigned_set)
+                            # 팀별 데이터 분리
+                            team_a_df = real_players[real_players[col_team]=="A팀"]
+                            team_b_df = real_players[real_players[col_team]=="B팀"]
+                            
+                            count_a = len(team_a_df)
+                            count_b = len(team_b_df)
+                            
+                            # [핵심 수정] 팀별 제외 포지션 계산 함수
+                            def get_missing_pos(df_team, pos_col):
+                                if df_team.empty: return []
+                                current_pos = set(df_team[pos_col].unique())
+                                full_set = set(POSITIONS_ALL) # 전체 9개 포지션
+                                missing = list(full_set - current_pos)
+                                
+                                # 정렬 순서 정의 (주요 포지션 순서대로 보여주기 위함)
+                                sort_order = {p: i for i, p in enumerate(POSITIONS_ALL)}
+                                missing.sort(key=lambda x: sort_order.get(x, 99))
+                                return missing
+
+                            missing_a = get_missing_pos(team_a_df, col_pos)
+                            missing_b = get_missing_pos(team_b_df, col_pos)
+                            
+                            missing_text_a = ", ".join(missing_a) if missing_a else "없음"
+                            missing_text_b = ", ".join(missing_b) if missing_b else "없음"
+
+                            # 안내 메시지 구성 (팀별 제외 포지션 명시)
                             info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
-                            if missing: info_msg += f" (제외: {', '.join(missing)})"
+                            # 8대7 처럼 인원수 다를 때 유용하게 표시
+                            if count_a != count_b:
+                                info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                            else:
+                                # 인원수 같을 땐 공간 절약을 위해 합칠 수도 있지만, 명확성을 위해 분리 표기 추천
+                                if missing_text_a == missing_text_b:
+                                    info_msg += f" (공통 제외: {missing_text_a})"
+                                else:
+                                    info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                    
                             st.info(info_msg)
 
                         def get_badge(row, pos_col):
@@ -972,12 +1002,12 @@ with tab2:
 
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.error("🔴 A팀 (VEGA)")
+                            st.error(f"🔴 A팀 (VEGA)")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
                                 badge = get_badge(r, col_pos)
                                 st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r['1순위']})", unsafe_allow_html=True)
                         with c2:
-                            st.info("🔵 B팀 (픽업)")
+                            st.info(f"🔵 B팀 (픽업)")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
                                 badge = get_badge(r, col_pos)
                                 st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r['1순위']})", unsafe_allow_html=True)
