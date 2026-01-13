@@ -961,6 +961,7 @@ with tab3:
 
     st.header("📊 My Player Card")
     
+    # 세션 상태 초기화
     if 'my_name' not in st.session_state: st.session_state['my_name'] = ""
     if 'my_phone' not in st.session_state: st.session_state['my_phone'] = ""
 
@@ -969,55 +970,71 @@ with tab3:
         with c1: input_name = st.text_input("이름", value=st.session_state['my_name'])
         with c2: input_phone = st.text_input("연락처", value=st.session_state['my_phone'])
         
+        # [수정] st.rerun() 삭제 -> 튕김 현상 해결
         if st.form_submit_button("조회 & 분석"):
             st.session_state['my_name'] = input_name
             st.session_state['my_phone'] = input_phone
-            st.rerun()
+            st.toast(f"{input_name}님 기록을 조회합니다.", icon="🔍") # [NEW] 알림 추가
 
+    # 조회된 정보가 있으면 결과 표시 (rerun 없어도 바로 실행됨)
     if st.session_state['my_name'] and st.session_state['my_phone']:
         my_name = st.session_state['my_name']
         my_phone = st.session_state['my_phone']
         clean_phone = normalize_phone(my_phone)
         
+        # 1. 데이터 수집
         hist = get_my_history(my_name, my_phone)
         mvp_received, mvp_voted = get_my_mvp_stats(my_name, my_phone)
+        
+        # 현재 신청 정보 확인
         cur_apps = load_applicants()
         my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
         
-        # [스탯 계산 로직]
-        # 1. 🔥 참여율 (Participation): 20회 만점
+        # 2. 스탯 계산 (Gamification Logic)
+        # (1) 참여율: 20회 만점
         score_part = min(len(hist) * 5, 100)
         
-        # 2. ✨ 매너 (Manner): MVP 10회 만점
+        # (2) 매너: MVP 10회 만점
         score_manner = min(mvp_received * 10, 100)
         
-        # 3. 🌈 다양성 (Diversity): 경험한 포지션(신청 기준) 수 * 15점
+        # (3) 다양성: 경험한 포지션(신청 기준) 수 * 15점
         unique_pos = set([str(h.get('1순위', '')).strip() for h in hist if h.get('1순위')])
         score_div = min(len(unique_pos) * 15, 100)
         
-        # 4. 🤝 사교성 (Social): 투표 참여 20회 만점
+        # (4) 사교성: 투표 참여 20회 만점
         score_social = min(mvp_voted * 5, 100)
         
-        # 5. [NEW] ❤️ 헌신 (Dedication): 내가 원하지 않은 포지션을 수행한 횟수
+        # (5) 헌신: 내가 원하지 않은 포지션을 수행한 횟수
         dedication_count = 0
         for h in hist:
             wish = str(h.get('1순위', '')).strip()
             assigned = str(h.get('확정포지션', '')).strip()
+            
             if assigned:
-                if assigned == '대기': dedication_count += 2 
-                elif assigned != wish: dedication_count += 1 
+                if assigned == '대기': dedication_count += 2 # 대기는 2점
+                elif assigned != wish: dedication_count += 1 # 1순위 아니면 1점
         
-        score_dedic = min(dedication_count * 15, 100) 
+        score_dedic = min(dedication_count * 15, 100)
 
-        stats = {'participation': score_part, 'manner': score_manner, 'dedication': score_dedic, 'diversity': score_div, 'social': score_social}
+        stats = {
+            'participation': score_part,
+            'manner': score_manner,
+            'dedication': score_dedic,
+            'diversity': score_div,
+            'social': score_social
+        }
 
+        # 3. 화면 표시
         st.divider()
         col_chart, col_info = st.columns([1.2, 1])
         
         with col_chart:
             st.markdown(f"### 🏐 {my_name}님의 스탯")
-            fig = draw_radar_chart(stats)
-            st.plotly_chart(fig, use_container_width=True)
+            try:
+                fig = draw_radar_chart(stats)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error("차트 로딩 중 오류가 발생했습니다. (잠시 후 다시 시도해주세요)")
             
         with col_info:
             st.markdown("#### 📌 요약 리포트")
@@ -1029,17 +1046,22 @@ with tab3:
             if my_cur:
                 status = "✅ 참가확인" if str(my_cur[0].get('입금')).upper() == 'O' else "⏳ 입금확인중"
                 st.info(f"이번 주: **{status}**")
-            else: st.caption("이번 주 신청 내역이 없습니다.")
+            else:
+                st.caption("이번 주 신청 내역이 없습니다.")
 
+        # 4. 과거 기록 상세
         with st.expander("📜 과거 경기 기록 전체 보기"):
             if hist:
                 df_hist = pd.DataFrame(hist)
+                # 보여줄 컬럼 선택
                 cols_to_show = ['일시', '게임제목', '1순위', '레벨']
-                if '확정포지션' in df_hist.columns: cols_to_show.append('확정포지션')
+                if '확정포지션' in df_hist.columns:
+                    cols_to_show.append('확정포지션')
+                
                 valid_cols = [c for c in cols_to_show if c in df_hist.columns]
                 st.dataframe(df_hist[valid_cols], hide_index=True, use_container_width=True)
-            else: st.info("아직 기록된 경기가 없습니다.")
-
+            else:
+                st.info("아직 기록된 경기가 없습니다.")
 # --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
