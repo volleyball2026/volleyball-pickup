@@ -671,7 +671,6 @@ with tab0:
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
-    # [중요] 시간 계산을 위한 라이브러리 가져오기 (이 줄이 꼭 필요합니다!)
     from datetime import timedelta 
 
     if current_game:
@@ -679,14 +678,12 @@ with tab1:
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
         
-        # [수정] 서버 시간을 한국 시간(KST)으로 보정 (UTC + 9시간)
+        # 서버 시간을 한국 시간(KST)으로 보정
         now = datetime.utcnow() + timedelta(hours=9)
-        
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
         
-        # 상단 요약 정보
         c1, c2 = st.columns(2)
         with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
         with c2: 
@@ -695,72 +692,75 @@ with tab1:
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
         st.divider()
 
-        # [수정] 마감되었을 때 오픈채팅방 안내 문구 표시 (신청 폼 숨김)
+        # [로직 변경] 마감 후에도 폼은 보여주되, 경고 문구 추가
         if is_expired:
-            st.error(f"🚫 **온라인 신청이 마감되었습니다.** ({deadline_str})")
+            st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.\n\n신청서를 작성하시면 **대기 명단**에 등록되며, **반드시 오픈채팅방으로 연락**하여 참가 가능 여부를 확인받으셔야 합니다.")
+        
+        st.write("### 👇 참가 신청서")
+        with st.form("apply_form"):
+            c1, c2 = st.columns(2)
+            with c1: name = st.text_input("이름")
+            with c2: phone = st.text_input("연락처", placeholder="01012345678")
             
-            st.write("") # 여백
-            
-            with st.container(border=True):
-                st.subheader("😥 조금 늦으셨나요?")
+            with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                 st.markdown("""
-                **시범 운영 기간**에는 마감 후에도 빈 자리가 있다면 참가가 가능할 수 있습니다.
-                참가를 원하시면 아래 버튼을 눌러 **오픈채팅방**으로 문의해주세요.
+                - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
+                - **초급**: 게임 경험은 적지만 참여 가능
+                - **중급**: 전국대회에 무리 없이 참여할 수 있는 수준
+                - **상급**: 전국대회 상위 무대에서도 원활히 활동 가능
+                - **최상급**: 전국대회 최상위권, 선출 준하는 실력
                 """)
-                st.link_button("💬 운영진에게 문의하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
-                
-        else:
-            # (마감 전일 때만 신청 폼 표시)
-            st.write("### 👇 참가 신청서")
-            with st.form("apply_form"):
-                c1, c2 = st.columns(2)
-                with c1: name = st.text_input("이름")
-                with c2: phone = st.text_input("연락처", placeholder="01012345678")
-                
-                with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
-                    st.markdown("""
-                    - **입문**: 기본기가 부족하여 실제 경기 참여는 어려움
-                    - **초급**: 게임 경험은 적지만 참여 가능
-                    - **중급**: 전국대회에 무리 없이 참여할 수 있는 수준
-                    - **상급**: 전국대회 상위 무대에서도 원활히 활동 가능
-                    - **최상급**: 전국대회 최상위권, 선출 준하는 실력
-                    """)
-                
-                is_vega = st.checkbox("순천VEGA 회원 (우선권)")
-                
-                lc1, lc2 = st.columns([2, 1])
-                with lc1: level = st.selectbox("참가자 레벨", LEVELS)
-                with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
-                
-                st.markdown("---")
-                st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
-                
-                p1, p2, p3 = st.columns(3)
-                with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
-                with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
-                with p3: pos3 = st.selectbox("3순위 (수비/속공)", ["선택 안함"] + POSITIONS_3RD)
-                if st.form_submit_button("신청하기"):
-                    if name and phone:
-                        is_black, reason = check_blacklist(name, phone)
-                        if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
-                        else:
-                            final_name = f"[VEGA] {name}" if is_vega else name
-                            add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
-                            st.success(f"{name}님 신청 완료!")
-                    else: st.error("필수 입력 누락")
             
-            with st.expander("🗑️ 신청 취소"):
-                with st.form("cancel"):
-                    cc1, cc2 = st.columns(2)
-                    with cc1: c_name = st.text_input("이름")
-                    with cc2: c_phone = st.text_input("연락처")
-                    if st.form_submit_button("취소하기"):
-                        suc, msg = cancel_applicant(c_name, c_phone)
-                        if not suc:
-                            suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
+            is_vega = st.checkbox("순천VEGA 회원 (우선권)")
+            
+            lc1, lc2 = st.columns([2, 1])
+            with lc1: level = st.selectbox("참가자 레벨", LEVELS)
+            with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
+            
+            st.markdown("---")
+            if not is_expired:
+                st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
+            
+            p1, p2, p3 = st.columns(3)
+            with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
+            with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
+            with p3: pos3 = st.selectbox("3순위 (수비/속공)", ["선택 안함"] + POSITIONS_3RD)
+            
+            # [버튼 텍스트 변경] 마감 여부에 따라 다르게 표시
+            submit_label = "대기/추가 등록하기 (마감됨)" if is_expired else "신청하기"
+            
+            if st.form_submit_button(submit_label):
+                if name and phone:
+                    is_black, reason = check_blacklist(name, phone)
+                    if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
+                    else:
+                        final_name = f"[VEGA] {name}" if is_vega else name
+                        add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
                         
-                        if suc: st.success(msg)
-                        else: st.error(msg)
+                        # [성공 메시지 분기] 마감 후라면 추가 행동 유도
+                        if is_expired:
+                            st.success(f"✅ {name}님, **대기(추가) 명단**에 등록되었습니다!")
+                            st.markdown("""
+                            📢 **잠깐! 아직 확정이 아닙니다.**
+                            마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.
+                            """)
+                            st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
+                        else:
+                            st.success(f"✅ {name}님 신청 완료!")
+                else: st.error("필수 입력 누락")
+        
+        with st.expander("🗑️ 신청 취소"):
+            with st.form("cancel"):
+                cc1, cc2 = st.columns(2)
+                with cc1: c_name = st.text_input("이름")
+                with cc2: c_phone = st.text_input("연락처")
+                if st.form_submit_button("취소하기"):
+                    suc, msg = cancel_applicant(c_name, c_phone)
+                    if not suc:
+                        suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
+                    
+                    if suc: st.success(msg)
+                    else: st.error(msg)
 
         st.divider()
         st.subheader("📊 실시간 참가 신청 현황")
@@ -770,13 +770,13 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (HTML 들여쓰기 제거 + 모바일 최적화)
+            # [1] 포지션 경쟁률
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # [중요] 들여쓰기(Indentation) 없는 HTML 코드
+                # HTML 들여쓰기 없이 작성 (디자인 유지)
                 html_code = """
 <style>
 .pos-container {
@@ -797,7 +797,6 @@ with tab1:
 .pos-count { font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px; }
 .pos-status { font-size: 0.75em; font-weight: bold; }
 
-/* 상태별 스타일 */
 .status-safe { color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
 .status-warn { color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
 .status-max { color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
@@ -809,16 +808,16 @@ with tab1:
                     count = pos_counts.get(pos, 0)
                     
                     if count >= 7:
-                        status_class = "status-full" # 빨강
+                        status_class = "status-full"
                         status_text = "초과"
                     elif count == 6:
-                        status_class = "status-max"  # 파랑 (마감)
+                        status_class = "status-max"
                         status_text = "마감"
                     elif count == 5:
-                        status_class = "status-warn" # 주황
+                        status_class = "status-warn"
                         status_text = "임박"
                     else:
-                        status_class = "status-safe" # 초록
+                        status_class = "status-safe"
                         status_text = "여유"
                     
                     html_code += f"""<div class="pos-card">
