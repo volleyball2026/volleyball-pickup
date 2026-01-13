@@ -750,51 +750,36 @@ with tab1:
             df_public = pd.DataFrame(applicants)
             
             # ---------------------------------------------------------
-            # [1] 포지션 경쟁률 (맨 위로 이동 - 모바일 배려)
+            # [1] 포지션 경쟁률 (깔끔한 Metric 디자인으로 복구)
             # ---------------------------------------------------------
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
                 
-                # 시각적으로 보기 좋게 4열 그리드로 배치
-                grid_cols = st.columns(4)
+                # 4열로 깔끔하게 배치
+                m_cols = st.columns(4)
                 all_pos_list = POSITIONS_ALL
                 
                 for idx, pos in enumerate(all_pos_list):
                     count = pos_counts.get(pos, 0)
                     
-                    # [수정된 로직] 3세트 로테이션 -> 포지션당 최대 6명 수용 가능
-                    # 1~4명: 여유 / 5~6명: 혼잡 / 7명이상: 초과
+                    # [로직] 1~4: 여유(초록), 5~6: 임박(회색/주의), 7~: 초과(빨강)
                     if count >= 7:
-                        status_color = "#FFCDD2" # 연한 빨강 배경
-                        text_color = "#C62828"   # 진한 빨강 글씨
-                        msg = "초과(경쟁)"
+                        state_msg = "초과 (경쟁)"
+                        delta_color = "inverse" # 빨강
                     elif count >= 5:
-                        status_color = "#FFF9C4" # 연한 노랑 배경
-                        text_color = "#F57F17"   # 진한 주황 글씨
-                        msg = "마감임박"
+                        state_msg = "마감임박"
+                        delta_color = "off"     # 회색 (Streamlit 기본 스타일 활용)
                     else:
-                        status_color = "#E8F5E9" # 연한 초록 배경
-                        text_color = "#2E7D32"   # 진한 초록 글씨
-                        msg = "여유"
+                        state_msg = "여유"
+                        delta_color = "normal"  # 초록
                     
-                    # 카드 형태 디자인
-                    with grid_cols[idx % 4]:
-                        st.markdown(f"""
-                        <div style="
-                            background-color: {status_color};
-                            padding: 10px;
-                            border-radius: 8px;
-                            text-align: center;
-                            margin-bottom: 10px;
-                            border: 1px solid {text_color};
-                        ">
-                            <div style="font-weight:bold; color:black; margin-bottom:4px;">{pos}</div>
-                            <div style="color:{text_color}; font-size:14px; font-weight:bold;">{count}명 ({msg})</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    # 디자인: st.metric 사용 (가장 깔끔함)
+                    with m_cols[idx % 4]:
+                        st.metric(label=pos, value=f"{count}명", delta=state_msg, delta_color=delta_color)
             
             st.write("") # 여백
+            st.divider()
             
             # ---------------------------------------------------------
             # [2] 하단 분할 레이아웃 (좌: 명단 / 우: 통계)
@@ -820,12 +805,13 @@ with tab1:
             with col_stats:
                 st.markdown("##### 🍰 레벨 분포")
                 if '레벨' in df_public.columns:
-                    # 모든 레벨이 표시되도록 (0명이어도) 재구성
                     level_counts = df_public['레벨'].value_counts()
                     chart_data = []
-                    for lv in LEVELS: # 입문~최상급 순서 고정
+                    
+                    # [수정] 0명인 레벨도 모두 포함하여 차트 데이터 생성
+                    for lv in LEVELS: 
                         cnt = level_counts.get(lv, 0)
-                        # [수정] 범례에 텍스트 표시 (예: "초급 (2명)")
+                        # 범례 텍스트: "초급 (0명)" 형식
                         label = f"{lv} ({cnt}명)"
                         chart_data.append({"Level": lv, "Count": cnt, "Label": label})
                     
@@ -836,7 +822,7 @@ with tab1:
                         theta=alt.Theta("Count", stack=True)
                     )
                     pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
-                        color=alt.Color("Label", title="레벨 현황", sort=None), # 범례에 Label 사용
+                        color=alt.Color("Label", title="레벨 현황", sort=None), 
                         tooltip=["Level", "Count"]
                     )
                     st.altair_chart(pie, use_container_width=True)
