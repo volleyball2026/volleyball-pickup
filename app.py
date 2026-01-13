@@ -679,6 +679,8 @@ with tab1:
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
+        
+        # 상단 요약 정보
         c1, c2 = st.columns(2)
         with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
         with c2: 
@@ -711,8 +713,7 @@ with tab1:
                 with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
                 
                 st.markdown("---")
-                
-                st.info("📢 **주의:** 1순위 마감 시 2·3순위가 없으면 **임의 배정**되거나 **대기**로 밀릴 수 있습니다. (2·3순위 필수 아님, 권장)")
+                st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
                 
                 p1, p2, p3 = st.columns(3)
                 with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
@@ -748,10 +749,59 @@ with tab1:
         if applicants:
             df_public = pd.DataFrame(applicants)
             
-            # [레이아웃 분할] 왼쪽: 명단(70%), 오른쪽: 대시보드(30%)
-            col_list, col_dashboard = st.columns([2.2, 1])
+            # ---------------------------------------------------------
+            # [1] 포지션 경쟁률 (맨 위로 이동 - 모바일 배려)
+            # ---------------------------------------------------------
+            st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
+            if '1순위' in df_public.columns:
+                pos_counts = df_public['1순위'].value_counts()
+                
+                # 시각적으로 보기 좋게 4열 그리드로 배치
+                grid_cols = st.columns(4)
+                all_pos_list = POSITIONS_ALL
+                
+                for idx, pos in enumerate(all_pos_list):
+                    count = pos_counts.get(pos, 0)
+                    
+                    # [수정된 로직] 3세트 로테이션 -> 포지션당 최대 6명 수용 가능
+                    # 1~4명: 여유 / 5~6명: 혼잡 / 7명이상: 초과
+                    if count >= 7:
+                        status_color = "#FFCDD2" # 연한 빨강 배경
+                        text_color = "#C62828"   # 진한 빨강 글씨
+                        msg = "초과(경쟁)"
+                    elif count >= 5:
+                        status_color = "#FFF9C4" # 연한 노랑 배경
+                        text_color = "#F57F17"   # 진한 주황 글씨
+                        msg = "마감임박"
+                    else:
+                        status_color = "#E8F5E9" # 연한 초록 배경
+                        text_color = "#2E7D32"   # 진한 초록 글씨
+                        msg = "여유"
+                    
+                    # 카드 형태 디자인
+                    with grid_cols[idx % 4]:
+                        st.markdown(f"""
+                        <div style="
+                            background-color: {status_color};
+                            padding: 10px;
+                            border-radius: 8px;
+                            text-align: center;
+                            margin-bottom: 10px;
+                            border: 1px solid {text_color};
+                        ">
+                            <div style="font-weight:bold; color:black; margin-bottom:4px;">{pos}</div>
+                            <div style="color:{text_color}; font-size:14px; font-weight:bold;">{count}명 ({msg})</div>
+                        </div>
+                        """, unsafe_allow_html=True)
             
-            # 1. 왼쪽 영역: 신청자 명단
+            st.write("") # 여백
+            
+            # ---------------------------------------------------------
+            # [2] 하단 분할 레이아웃 (좌: 명단 / 우: 통계)
+            # ---------------------------------------------------------
+            col_list, col_stats = st.columns([2.2, 1])
+            
+            # 왼쪽: 신청자 명단
             with col_list:
                 st.markdown("##### 📋 신청자 명단")
                 if '입금' not in df_public.columns: df_public['입금'] = "X"
@@ -764,85 +814,39 @@ with tab1:
                 show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
                 real_cols = [c for c in show_cols if c in df_public.columns]
                 
-                # 높이를 충분히 주어 스크롤 없이 최대한 보이게 함
-                st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=600)
-                st.caption("📢 **유의사항:** 불참 시 꼭 [신청 취소]를 해주세요. 무단 불참(No-Show)은 향후 참가가 제한될 수 있습니다.")
+                st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
 
-            # 2. 오른쪽 영역: 실시간 대시보드
-            with col_dashboard:
-                # (1) 포지션별 마감 현황 (신호등)
-                st.markdown("##### 🚦 포지션 경쟁률")
-                if '1순위' in df_public.columns:
-                    pos_counts = df_public['1순위'].value_counts()
-                    # 포지션 순서 정렬 (설정된 순서대로)
-                    sorted_pos = [p for p in POSITIONS_ALL if p in pos_counts.index]
-                    other_pos = [p for p in pos_counts.index if p not in POSITIONS_ALL]
-                    
-                    with st.container(border=True):
-                        for pos in sorted_pos + other_pos:
-                            count = pos_counts[pos]
-                            # 경쟁률 기준 (예: 2명 이상이면 과열)
-                            # 픽업 특성상 포지션별 1~2명이 정원이므로 색상 구분
-                            color = "green"
-                            msg = "여유"
-                            if count >= 3: 
-                                color = "red"
-                                msg = "초과!"
-                            elif count >= 2: 
-                                color = "orange"
-                                msg = "마감임박"
-                            
-                            # 커스텀 HTML로 프로그레스 바 느낌 내기
-                            st.markdown(f"""
-                            <div style="margin-bottom: 8px;">
-                                <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold;">
-                                    <span>{pos}</span>
-                                    <span style="color:{color};">{count}명 ({msg})</span>
-                                </div>
-                                <div style="background-color:#eee; width:100%; height:8px; border-radius:4px;">
-                                    <div style="background-color:{color}; width:{min(count*33, 100)}%; height:100%; border-radius:4px;"></div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                
-                st.write("") # 여백
-
-                # (2) 레벨 분포 (도넛 차트)
+            # 오른쪽: 레벨 통계 및 요약
+            with col_stats:
                 st.markdown("##### 🍰 레벨 분포")
                 if '레벨' in df_public.columns:
-                    level_counts = df_public['레벨'].value_counts().reset_index()
-                    level_counts.columns = ['Level', 'Count']
+                    # 모든 레벨이 표시되도록 (0명이어도) 재구성
+                    level_counts = df_public['레벨'].value_counts()
+                    chart_data = []
+                    for lv in LEVELS: # 입문~최상급 순서 고정
+                        cnt = level_counts.get(lv, 0)
+                        # [수정] 범례에 텍스트 표시 (예: "초급 (2명)")
+                        label = f"{lv} ({cnt}명)"
+                        chart_data.append({"Level": lv, "Count": cnt, "Label": label})
+                    
+                    df_chart = pd.DataFrame(chart_data)
                     
                     # Altair 도넛 차트
-                    base = alt.Chart(level_counts).encode(
+                    base = alt.Chart(df_chart).encode(
                         theta=alt.Theta("Count", stack=True)
                     )
                     pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
-                        color=alt.Color("Level", legend=None), # 범례는 아래 텍스트로 대체하거나 공간 절약
+                        color=alt.Color("Label", title="레벨 현황", sort=None), # 범례에 Label 사용
                         tooltip=["Level", "Count"]
                     )
-                    text = base.mark_text(radius=95).encode(
-                        text=alt.Text("Count"),
-                        order=alt.Order("Level"),
-                        color=alt.value("black")  
-                    )
-                    st.altair_chart(pie + text, use_container_width=True)
-                    
-                    # 텍스트로도 비율 표시
-                    total_n = len(df_public)
-                    top_lv = level_counts.iloc[0]
-                    st.caption(f"💡 **{top_lv['Level']}** 등급이 {top_lv['Count']}명({int(top_lv['Count']/total_n*100)}%)으로 가장 많습니다.")
+                    st.altair_chart(pie, use_container_width=True)
 
-                st.write("") 
-
-                # (3) 참가 신청 요약
                 st.markdown("##### 📌 요약 정보")
                 with st.container(border=True):
                     total_cnt = len(df_public)
                     vega_cnt = len([n for n in df_public['이름'] if "[VEGA]" in str(n)])
                     pickup_cnt = total_cnt - vega_cnt
                     
-                    # 남은 시간 계산
                     if not is_expired:
                         diff = deadline_dt - datetime.now()
                         hours = diff.seconds // 3600 + (diff.days * 24)
