@@ -22,11 +22,11 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
-    "2026.01.14 (Ver 2.4)": [
+    "2026.01.14 (Ver 2.5)": [
+        "ℹ️ [가이드] MyPage 능력치(스탯) 설명 추가",
         "🚀 [성능] 데이터 조회 캐싱 적용 (튕김 방지)",
         "📊 [MyPage] 개인 능력치 레이더 차트 도입",
-        "❤️ [스탯] '실력' 대신 '헌신(Dedication)' 지표 신설",
-        "💾 [DB] 경기 기록 시 확정 포지션 자동 아카이빙"
+        "❤️ [스탯] '헌신(Dedication)' 지표 신설"
     ],
     "2026.01.13 (Ver 2.2)": [
         "🕒 [기능] 마감 후 '대기/추가' 등록 모드 지원",
@@ -225,7 +225,6 @@ def add_to_blacklist(name, phone, reason):
     sheet = get_sheet_instance(SHEET_BLACKLIST)
     if sheet: sheet.append_row([name, normalize_phone(phone), reason, datetime.now().strftime("%Y-%m-%d")])
 
-# [수정] 캐싱 적용 (60초) -> 튕김 방지 핵심
 @st.cache_data(ttl=60)
 def get_my_history(name, phone):
     sheet = get_sheet_instance(SHEET_HISTORY)
@@ -295,7 +294,6 @@ def load_suggestions():
     if sheet: return sheet.get_all_records()
     return []
 
-# [수정] 캐싱 적용 (60초) -> 튕김 방지 핵심
 @st.cache_data(ttl=60)
 def get_my_mvp_stats(name, phone):
     sheet = get_sheet_instance(SHEET_MVP)
@@ -309,7 +307,6 @@ def get_my_mvp_stats(name, phone):
             if row.get('투표자이름') == name and normalize_phone(row.get('투표자연락처')) == clean_phone: voted += 1
     return received, voted
 
-# [NEW] 레이더 차트 그리기
 def draw_radar_chart(stats):
     categories = ['🔥참여율', '✨매너', '❤️헌신', '🌈다양성', '🤝사교성']
     values = [stats['participation'], stats['manner'], stats['dedication'], stats['diversity'], stats['social']]
@@ -725,7 +722,7 @@ with tab1:
             with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
             
             st.markdown("---")
-            if not is_expired: st.info("📢 **주의:** 1순위 경쟁 시 점수에 따라 밀릴 수 있습니다.")
+            if not is_expired: st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
             
             p1, p2, p3 = st.columns(3)
             with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
@@ -945,13 +942,11 @@ with tab3:
     if 'my_name' not in st.session_state: st.session_state['my_name'] = ""
     if 'my_phone' not in st.session_state: st.session_state['my_phone'] = ""
 
-    # [수정] 폼에서 캐싱된 데이터를 호출하여 부하 감소
     with st.form("my_history"):
         c1, c2 = st.columns(2)
         with c1: input_name = st.text_input("이름", value=st.session_state['my_name'])
         with c2: input_phone = st.text_input("연락처", value=st.session_state['my_phone'])
         
-        # [중요] st.rerun 삭제 + 토스트 추가
         if st.form_submit_button("조회 & 분석"):
             st.session_state['my_name'] = input_name
             st.session_state['my_phone'] = input_phone
@@ -962,7 +957,6 @@ with tab3:
         my_phone = st.session_state['my_phone']
         clean_phone = normalize_phone(my_phone)
         
-        # [수정] 캐싱된 함수 호출
         hist = get_my_history(my_name, my_phone)
         mvp_received, mvp_voted = get_my_mvp_stats(my_name, my_phone)
         cur_apps = load_applicants()
@@ -993,10 +987,19 @@ with tab3:
             st.markdown(f"### 🏐 {my_name}님의 스탯")
             try:
                 fig = draw_radar_chart(stats)
-                # [수정] 모바일 메모리 절약을 위한 staticPlot 설정
                 st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
             except Exception as e:
                 st.error("차트 로딩 중 오류가 발생했습니다.")
+            
+            # [NEW] 스탯 설명 추가
+            with st.expander("ℹ️ 스탯 산정 기준 보기"):
+                st.markdown("""
+                - **🔥 참여율**: 꾸준함의 지표 (20회 만점)
+                - **✨ 매너**: MVP 수상 횟수 (10회 만점)
+                - **❤️ 헌신**: 비선호 포지션/대기 수행 (팀을 위한 양보)
+                - **🌈 다양성**: 소화 가능한 포지션 개수 (올라운더)
+                - **🤝 사교성**: MVP 투표 참여 횟수 (커뮤니티 활동)
+                """)
             
         with col_info:
             st.markdown("#### 📌 요약 리포트")
@@ -1119,7 +1122,8 @@ with tab6:
                 if pw2 == ADMIN_PASSWORD:
                     st.session_state['lineup_admin_logged_in'] = True
                     lineup_auth.empty()
-                else: st.error("비밀번호 불일치")
+                else:
+                    st.error("비밀번호 불일치")
     
     if st.session_state['lineup_admin_logged_in']:
         
@@ -1315,12 +1319,7 @@ with tab6:
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
-                final_df = df.copy()
-                final_df.update(edited_df)
-                update_lineup(final_df)
-                st.success("저장되었습니다!")
-                time.sleep(1.0)
-                st.rerun()
+                final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
 
 # --- 탭 7: 관리자 ---
 with tab7:
