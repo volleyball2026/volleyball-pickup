@@ -940,29 +940,35 @@ with tab3:
 
     st.header("📊 My Player Card")
     
+    # 세션 상태 초기화
     if 'my_name' not in st.session_state: st.session_state['my_name'] = ""
     if 'my_phone' not in st.session_state: st.session_state['my_phone'] = ""
 
+    # [수정] 폼에서 캐싱된 데이터를 호출하여 부하 감소
     with st.form("my_history"):
         c1, c2 = st.columns(2)
         with c1: input_name = st.text_input("이름", value=st.session_state['my_name'])
         with c2: input_phone = st.text_input("연락처", value=st.session_state['my_phone'])
         
+        # [중요] st.rerun 삭제 + 토스트 추가
         if st.form_submit_button("조회 & 분석"):
             st.session_state['my_name'] = input_name
             st.session_state['my_phone'] = input_phone
             st.toast(f"{input_name}님 기록을 조회합니다.", icon="🔍")
 
+    # 조회된 정보가 있으면 결과 표시 (rerun 없어도 바로 실행됨)
     if st.session_state['my_name'] and st.session_state['my_phone']:
         my_name = st.session_state['my_name']
         my_phone = st.session_state['my_phone']
         clean_phone = normalize_phone(my_phone)
         
+        # [수정] 캐싱된 함수 호출
         hist = get_my_history(my_name, my_phone)
         mvp_received, mvp_voted = get_my_mvp_stats(my_name, my_phone)
         cur_apps = load_applicants()
         my_cur = [p for p in cur_apps if (p['이름']==my_name or p['이름']==f"[VEGA] {my_name}") and normalize_phone(p['연락처'])==clean_phone]
         
+        # 스탯 계산
         score_part = min(len(hist) * 5, 100)
         score_manner = min(mvp_received * 10, 100)
         unique_pos = set([str(h.get('1순위', '')).strip() for h in hist if h.get('1순위')])
@@ -979,8 +985,15 @@ with tab3:
         
         score_dedic = min(dedication_count * 15, 100) 
 
-        stats = {'participation': score_part, 'manner': score_manner, 'dedication': score_dedic, 'diversity': score_div, 'social': score_social}
+        stats = {
+            'participation': score_part, 
+            'manner': score_manner, 
+            'dedication': score_dedic, 
+            'diversity': score_div, 
+            'social': score_social
+        }
 
+        # 3. 화면 표시
         st.divider()
         col_chart, col_info = st.columns([1.2, 1])
         
@@ -988,19 +1001,24 @@ with tab3:
             st.markdown(f"### 🏐 {my_name}님의 스탯")
             try:
                 fig = draw_radar_chart(stats)
+                # [수정] 모바일 메모리 절약을 위한 staticPlot 설정
                 st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
             except Exception as e:
                 st.error("차트 로딩 중 오류가 발생했습니다.")
             
-            # [NEW] 스탯 설명 추가
-            with st.expander("ℹ️ 스탯 산정 기준 보기"):
+            # [NEW] 스탯 설명 추가 (여기에 들어갑니다!)
+            with st.expander("ℹ️ 스탯(능력치) 산정 기준 보기"):
                 st.markdown("""
-                - **🔥 참여율**: 꾸준함의 지표 (20회 만점)
-                - **✨ 매너**: MVP 수상 횟수 (10회 만점)
-                - **❤️ 헌신**: 비선호 포지션/대기 수행 (팀을 위한 양보)
-                - **🌈 다양성**: 소화 가능한 포지션 개수 (올라운더)
-                - **🤝 사교성**: MVP 투표 참여 횟수 (커뮤니티 활동)
-                """)
+                <div style="font-size: 0.9em; color: #555;">
+                
+                - **🔥 참여율**: 꾸준함의 상징! (총 참여 20회 시 만점)
+                - **✨ 매너**: 동료들의 인정! (MVP 수상 10회 시 만점)
+                - **❤️ 헌신**: 팀을 위한 양보! (비선호 포지션/대기 수행 시 상승)
+                - **🌈 다양성**: 올라운더 플레이어! (경험한 포지션 수에 비례)
+                - **🤝 사교성**: 커뮤니티 관심도! (MVP 투표 참여 20회 시 만점)
+                
+                </div>
+                """, unsafe_allow_html=True)
             
         with col_info:
             st.markdown("#### 📌 요약 리포트")
@@ -1012,17 +1030,21 @@ with tab3:
             if my_cur:
                 status = "✅ 참가확인" if str(my_cur[0].get('입금')).upper() == 'O' else "⏳ 입금확인중"
                 st.info(f"이번 주: **{status}**")
-            else: st.caption("이번 주 신청 내역이 없습니다.")
+            else:
+                st.caption("이번 주 신청 내역이 없습니다.")
 
+        # 4. 과거 기록 상세
         with st.expander("📜 과거 경기 기록 전체 보기"):
             if hist:
                 df_hist = pd.DataFrame(hist)
                 cols_to_show = ['일시', '게임제목', '1순위', '레벨']
-                if '확정포지션' in df_hist.columns: cols_to_show.append('확정포지션')
+                if '확정포지션' in df_hist.columns:
+                    cols_to_show.append('확정포지션')
+                
                 valid_cols = [c for c in cols_to_show if c in df_hist.columns]
                 st.dataframe(df_hist[valid_cols], hide_index=True, use_container_width=True)
-            else: st.info("아직 기록된 경기가 없습니다.")
-
+            else:
+                st.info("아직 기록된 경기가 없습니다.")
 # --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
