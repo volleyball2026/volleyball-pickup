@@ -1421,7 +1421,8 @@ with tab7:
                 if pw == ADMIN_PASSWORD:
                     st.session_state['admin_logged_in'] = True
                     admin_auth.empty()
-                else: st.error("비밀번호 불일치")
+                else:
+                    st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
         st.subheader("✅ 참가 확인 관리 (시범운영)")
@@ -1454,9 +1455,9 @@ with tab7:
             else: st.info("참가자가 없습니다.")
 
         st.divider()
-        st.subheader("🛠️ 게임 개설")
+        st.subheader("🛠️ 새 게임 개설")
         with st.form("create_game"):
-            reset_chk = st.checkbox("명단 초기화 (아카이빙)", value=True)
+            reset_chk = st.checkbox("개설 시 기존 명단 초기화 (아카이빙)", value=True)
             title = st.text_input("게임 제목")
             dt = st.text_input("일시")
             loc = st.text_input("장소")
@@ -1472,11 +1473,25 @@ with tab7:
                 deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
                 info = {"제목": title, "일시": dt, "장소": loc, "성별": gender, "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, "마감일시": deadline_str}
                 save_game_info(info)
-                if reset_chk: archive_current_game(); clear_applicants()
+                if reset_chk: 
+                    archive_current_game()
+                    clear_applicants()
                 st.success("게임이 개설되었습니다.")
                 time.sleep(1.5)
                 st.rerun()
         
+        # [NEW] 게임 종료 기능 추가
+        st.divider()
+        st.subheader("🏁 현재 게임 종료 (수동)")
+        with st.expander("⚠️ 게임 종료 및 명단 초기화 (클릭)"):
+            st.warning("현재 참가자 명단을 '경기기록' 시트에 저장하고, 신청 내역을 **초기화**합니다.\n(새 게임을 만들지 않고 이번 게임을 마감할 때 사용하세요.)")
+            if st.button("현재 게임 종료하기"):
+                archive_current_game() # 기록 저장
+                clear_applicants()     # 명단 삭제
+                st.success("게임이 종료되고 명단이 저장(초기화)되었습니다.")
+                time.sleep(1.5)
+                st.rerun()
+
         st.divider()
         st.subheader("🚨 블랙리스트")
         with st.form("blacklist"):
@@ -1503,6 +1518,3 @@ with tab7:
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
                 if st.button("비상 저장"):
                     df_final.update(edited_final); update_lineup(df_final); st.success("완료")
-
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: gray; font-size: small;'>Designed by <b>Heeseong</b></div>", unsafe_allow_html=True)
