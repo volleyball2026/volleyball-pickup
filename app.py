@@ -1532,6 +1532,31 @@ with tab7:
             with c3: b_reason = st.text_input("사유")
             if st.form_submit_button("등록"):
                 add_to_blacklist(b_name, b_phone, b_reason); st.success("등록됨")
+
+        # --- 탭 7: 관리자 내부 ---
+        
+        # ... (기존 블랙리스트 코드 아래에 추가) ...
+
+        st.divider()
+        st.subheader("🎬 유튜브 영상 등록")
+        with st.form("video_upload"):
+            v_title = st.text_input("영상 제목 (예: 1월 15일 3세트 슈퍼플레이)")
+            v_url = st.text_input("유튜브 링크 (URL)")
+            st.caption("유튜브 영상의 '공유' 버튼을 눌러 링크를 복사해 붙여넣으세요.")
+            
+            if st.form_submit_button("영상 게시하기"):
+                if v_title and v_url:
+                    # 시트 헤더가 없으면 생성 (최초 1회)
+                    sheet_v = get_sheet_instance(SHEET_VIDEOS)
+                    if sheet_v and not sheet_v.get_all_values():
+                        sheet_v.append_row(["date", "title", "url"])
+                        
+                    save_video_link(v_url, v_title)
+                    st.success("영상이 '경기 영상' 탭에 게시되었습니다!")
+                else:
+                    st.error("제목과 링크를 모두 입력해주세요.")
+
+        # ... (기존 건의함 코드 ...)
         
         st.divider()
         st.subheader("🗣️ 건의함")
@@ -1556,3 +1581,34 @@ with tab7:
                     df_final.update(edited_final)
                     update_lineup(df_final)
                     st.success("완료")
+
+# --- 탭 8: 경기 영상 (NEW) ---
+with tab8:
+    st.header("📺 경기 영상 & 하이라이트")
+    
+    # 채널 정보 (사용자님이 운영하는 채널 URL로 변경하세요!)
+    YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@pickup-game-y7r" # 본인 채널 주소 입력
+    
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.markdown("### 📢 우리들의 멋진 플레이를 다시 보세요!")
+            st.write("매주 경기 영상과 하이라이트가 업로드됩니다.")
+        with c2:
+            st.link_button("👉 유튜브 채널 바로가기", YOUTUBE_CHANNEL_URL, use_container_width=True)
+
+    st.divider()
+    
+    # 최신 영상 불러오기
+    video_data = get_latest_video()
+    
+    if video_data and 'url' in video_data and video_data['url']:
+        st.subheader(f"🎬 {video_data.get('title', '최신 하이라이트')}")
+        st.caption(f"등록일: {video_data.get('date', '')}")
+        try:
+            st.video(video_data['url'])
+        except:
+            st.error("영상을 불러올 수 없습니다. 링크를 확인해주세요.")
+    else:
+        st.info("아직 등록된 하이라이트 영상이 없습니다.")
+        st.markdown(f"운영진이 영상을 편집 중입니다! [채널]({YOUTUBE_CHANNEL_URL})에서 확인해보세요.")
