@@ -240,6 +240,17 @@ def get_my_history(name, phone):
             pass
     return history
 
+# --- [기록 조회용 함수 추가] ---
+@st.cache_data(ttl=60)
+def load_all_history():
+    sheet = get_sheet_instance(SHEET_HISTORY)
+    # 데이터가 없으면 빈 리스트 반환
+    if not sheet: return []
+    try:
+        return sheet.get_all_records()
+    except:
+        return []
+
 def save_mvp_vote(voter, phone, mvp_candidate):
     sheet = get_sheet_instance(SHEET_MVP)
     if sheet:
@@ -1118,30 +1129,28 @@ with tab4:
 
     st.header("🏆 MVP 투표")
     
-    # 1. 현재 신청자 로드
+    # 1. 현재 신청자 명단 로드
     apps = load_applicants()
-    is_archived_mode = False # 종료된 게임 모드인지 여부
-
-    # 2. [핵심 수정] 신청자가 없으면(게임 종료됨), 과거 기록에서 '가장 최근 게임' 멤버를 불러옴
+    
+    # 2. [핵심] 명단이 없으면(게임 종료됨), 과거 기록에서 '가장 최근 게임' 멤버를 불러옴
     if not apps:
-        all_history = load_all_history()
+        all_history = load_all_history() # 함수 정의 필요
         if all_history:
             # 가장 마지막에 저장된(최신) 날짜 가져오기
-            last_date = all_history[-1].get('일시')
+            last_record = all_history[-1]
+            last_date = last_record.get('일시')
             
-            # 해당 날짜의 참가자만 필터링 + 중복 제거 (이름/연락처 기준)
+            # 해당 날짜의 참가자만 필터링 (중복 제거)
             temp_players = {}
             for h in all_history:
                 if h.get('일시') == last_date:
+                    # 이름과 연락처를 키로 사용하여 중복 제거
                     key = (h.get('이름'), h.get('연락처'))
                     if key not in temp_players:
                         temp_players[key] = h
             
             if temp_players:
                 apps = list(temp_players.values())
-                is_archived_mode = True
-                
-                # 안내 메시지
                 st.info(f"📢 현재 진행 중인 게임이 없어, **최근 종료된 게임 ({last_date})** 명단으로 투표를 진행합니다.")
 
     if not apps:
@@ -1162,7 +1171,7 @@ with tab4:
                     # 명단(apps)에서 본인 확인
                     for p in apps:
                         # [VEGA] 태그 처리
-                        p_name_real = p['이름'].replace("[VEGA] ", "").strip()
+                        p_name_real = str(p['이름']).replace("[VEGA] ", "").strip()
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
                             found = True
                             break
@@ -1186,7 +1195,7 @@ with tab4:
             
             # 투표 양식
             with st.form("mvp_submit"):
-                # 본인을 제외한 후보 리스트 생성 (선택 사항, 여기선 전체 표시)
+                # 후보 리스트 생성
                 candidate_list = [p['이름'] for p in apps]
                 target_name = st.selectbox("🏅 MVP 선택 (오늘 가장 빛난 선수)", candidate_list)
                 
@@ -1223,8 +1232,13 @@ with tab4:
             hof = get_mvp_hall_of_fame()
             if len(hof) > 0: 
                 # 보기 좋게 컬럼 정리
-                hof_display = hof.rename(columns={'일시': '날짜', 'MVP후보': 'MVP'})
-                st.dataframe(hof_display[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
+                # DataFrame 컬럼명이 있는지 확인 후 처리
+                cols = ['일시', 'MVP후보', '득표수']
+                if all(c in hof.columns for c in cols):
+                    hof_display = hof.rename(columns={'일시': '날짜', 'MVP후보': 'MVP'})
+                    st.dataframe(hof_display[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
+                else:
+                    st.dataframe(hof, use_container_width=True)
 
 # --- 탭 5: 소리함 ---
 with tab5:
