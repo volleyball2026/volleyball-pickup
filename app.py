@@ -700,8 +700,22 @@ with tab1:
     if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
     if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
 
-    # 현재 진행 중인 게임이 있는지 확인
-    if current_game:
+    # [핵심] 게임 정보가 없거나, 제목이 'CLOSED'이면 대기 화면 표시
+    if not current_game or current_game.get('제목') == 'CLOSED':
+        st.info("💤 **현재 모집 중인 게임이 없습니다.**")
+        st.markdown("""
+        ### 🔜 다음 게임을 준비 중입니다!
+        
+        관리자가 새로운 게임을 개설할 때까지 잠시만 기다려주세요.
+        보통 **매주 일요일**에 새로운 모집이 시작됩니다.
+        
+        - 문의사항은 [오픈채팅방](https://open.kakao.com/o/gf1s6t9h)을 이용해주세요.
+        """)
+        # 심심하지 않게 귀여운 배구 아이콘이나 이미지를 넣어도 좋습니다
+        st.markdown("<div style='text-align: center; font-size: 100px;'>🏐</div>", unsafe_allow_html=True)
+        
+    else:
+        # --- 정상적인 참가 신청 화면 (게임이 있을 때만 보임) ---
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
@@ -709,7 +723,6 @@ with tab1:
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
-        
         c1, c2 = st.columns(2)
         with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
         with c2: 
@@ -746,7 +759,6 @@ with tab1:
             
             is_vega = st.checkbox("순천VEGA 회원 (우선권)")
             
-            # [시간 선택 기능]
             st.markdown("---")
             st.write("**⏱️ 참가 가능 시간(세트) 선택**")
             set_options = ["1·2세트 (19:20 ~ 20:00)", "3·4세트 (20:00 ~ 20:40)", "5·6세트 (20:40 ~ 21:20)"]
@@ -868,11 +880,6 @@ with tab1:
                     st.markdown(f"""- **총 인원**: **{total_cnt}명**\n- <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>\n- **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>""", unsafe_allow_html=True)
         else:
             st.info("아직 신청자가 없습니다.")
-    else:
-        # [중요] 게임이 없을 때 표시될 문구 (이게 없어서 빈 화면이 떴을 수 있습니다)
-        st.warning("⚠️ 현재 모집 중인 게임이 없습니다.")
-        st.info("👉 관리자에게 문의하거나 [관리자] 탭에서 게임을 개설해주세요.")
-
 # --- 탭 2: 라인업 공개 ---
 with tab2:
     # [수정] 뱃지/명예의전당 내용 제거하고 기본 가이드로 복귀
@@ -1503,15 +1510,23 @@ with tab7:
                 time.sleep(1.5)
                 st.rerun()
         
-        # [NEW] 게임 종료 기능 추가
+        # [NEW] 게임 종료 기능 (완전 종료 처리)
         st.divider()
         st.subheader("🏁 현재 게임 종료 (수동)")
-        with st.expander("⚠️ 게임 종료 및 명단 초기화 (클릭)"):
-            st.warning("현재 참가자 명단을 '경기기록' 시트에 저장하고, 신청 내역을 **초기화**합니다.\n(새 게임을 만들지 않고 이번 게임을 마감할 때 사용하세요.)")
+        with st.expander("⚠️ 게임 종료 및 모집 마감 (클릭)"):
+            st.warning("현재 참가자 명단을 저장(아카이빙)하고, **모집 상태를 '종료'로 변경**합니다.\n참가 신청 화면에 '모집 중인 게임 없음' 안내가 표시됩니다.")
             if st.button("현재 게임 종료하기"):
                 archive_current_game() # 기록 저장
                 clear_applicants()     # 명단 삭제
-                st.success("게임이 종료되고 명단이 저장(초기화)되었습니다.")
+                
+                # [핵심] 'CLOSED'라는 이름의 더미 게임 정보를 저장하여 탭 1에서 인식하게 함
+                close_info = {
+                    "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
+                    "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
+                }
+                save_game_info(close_info)
+                
+                st.success("게임이 종료되었습니다! 참가 신청 탭이 대기 화면으로 변경됩니다.")
                 time.sleep(1.5)
                 st.rerun()
 
