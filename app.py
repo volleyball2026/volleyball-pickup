@@ -1212,46 +1212,70 @@ with tab6:
                 st.caption("👆 오른쪽 위 복사 버튼을 눌러 단톡방에 공유하세요.")
             st.divider()
 
+            # [수정된 복구 로직]
             if 'fair_results' not in st.session_state and '확정1' in df.columns:
                 if df['확정1'].astype(str).str.strip().any():
                     restored_results = {}
                     base_players = df.to_dict('records')
-                    g_hist = {p['이름']: 0 for p in base_players}
-                    g_hard = {p['이름']: 0 for p in base_players}
-                    score_map = {}
-                    for p in base_players:
-                        sc, re = get_priority_score(p, g_hist, g_hard)
-                        score_map[p['이름']] = (sc, re)
-
+                    
+                    # 1. 누적 변수 초기화 (0점부터 시작)
+                    d_hist = {p['이름']: 0 for p in base_players}
+                    d_hard = {p['이름']: 0 for p in base_players}
+                    
+                    # 2. 1세트부터 3세트까지 순서대로 계산하며 상태 복구
                     for r in range(1, 4):
                         col_team = f"팀{r}"
                         col_pos = f"확정{r}"
                         team_a = []
                         team_b = []
+                        
+                        # [핵심] 이 라운드 시작 전의 점수를 미리 계산 (화면 표시용)
+                        score_map = {}
+                        for p in base_players:
+                            sc, re = get_priority_score(p, d_hist, d_hard)
+                            score_map[p['이름']] = (sc, re)
+
+                        # 저장된 결과 읽어서 팀 구성
                         for _, row in df.iterrows():
-                            p_data = row.to_dict()
-                            p_name = p_data['이름']
+                            p_name = row['이름']
                             assigned = str(row.get(col_pos, '')).strip()
                             team_val = str(row.get(col_team, '')).strip()
+                            
                             if not assigned: continue
+                            
+                            p_data = row.to_dict()
                             p_data['assigned_pos'] = assigned
-                            w1 = str(p_data.get('1순위','')).strip()
-                            w2 = str(p_data.get('2순위','')).strip()
-                            w3 = str(p_data.get('3순위','')).strip()
-                            if assigned == "대기": p_data['match_type'] = 'wait'
-                            elif assigned == w1: p_data['match_type'] = '1st'
-                            elif assigned == w2: p_data['match_type'] = '2nd'
-                            elif assigned == w3: p_data['match_type'] = '3rd'
-                            else: p_data['match_type'] = 'random'
+                            
+                            # 1. 계산해둔 점수 주입
                             if p_name in score_map:
                                 p_data['priority_score'] = score_map[p_name][0]
                                 p_data['score_reason'] = score_map[p_name][1]
-                            else:
-                                p_data['priority_score'] = 0
-                                p_data['score_reason'] = ""
+                            
+                            # 2. 매치 타입 판단 (누적을 위해 필요)
+                            w1 = str(p_data.get('1순위','')).strip()
+                            w2 = str(p_data.get('2순위','')).strip()
+                            w3 = str(p_data.get('3순위','')).strip()
+                            
+                            if assigned == "대기": match_type = 'wait'
+                            elif assigned == w1: match_type = '1st'
+                            elif assigned == w2: match_type = '2nd'
+                            elif assigned == w3: match_type = '3rd'
+                            else: match_type = 'random'
+                            p_data['match_type'] = match_type
+                            
+                            # 3. 팀 배정
                             if team_val == "A팀": team_a.append(p_data)
                             elif team_val == "B팀": team_b.append(p_data)
                             elif assigned == "대기": team_b.append(p_data)
+                            
+                            # [중요] 다음 세트를 위해 점수 누적 업데이트
+                            if match_type == '1st': d_hist[p_name] += 1
+                            
+                            if match_type == 'wait': d_hard[p_name] += 10
+                            elif match_type == '3rd': d_hard[p_name] += 5
+                            elif match_type == '2nd': d_hard[p_name] += 3
+                            elif match_type == 'random': d_hard[p_name] += 3
+
                         restored_results[r] = (team_a, team_b)
                     st.session_state['fair_results'] = restored_results
 
@@ -1378,7 +1402,12 @@ with tab6:
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
-                final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
+                final_df = df.copy()
+                final_df.update(edited_df)
+                update_lineup(final_df)
+                st.success("저장되었습니다!")
+                time.sleep(1.0)
+                st.rerun()
 
 
 # --- 탭 7: 관리자 ---
