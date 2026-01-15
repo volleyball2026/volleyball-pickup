@@ -681,7 +681,6 @@ with tab1:
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
-        
         c1, c2 = st.columns(2)
         with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
         with c2: 
@@ -717,9 +716,24 @@ with tab1:
                 st.markdown("- **입문**: 기본기 부족\n- **초급**: 경험 적음\n- **중급**: 전국대회 가능\n- **상급**: 전국대회 상위\n- **최상급**: 선출 준함")
             
             is_vega = st.checkbox("순천VEGA 회원 (우선권)")
-            lc1, lc2 = st.columns([2, 1])
+            
+            # [수정] 도착 시간 입력 대신 '참가 가능 세트' 멀티 선택 (시간 안내 포함)
+            st.markdown("---")
+            st.write("**⏱️ 참가 가능 시간(세트) 선택**")
+            set_options = [
+                "1·2세트 (19:20 ~ 20:00)", 
+                "3·4세트 (20:00 ~ 20:40)", 
+                "5·6세트 (20:40 ~ 21:20)"
+            ]
+            selected_sets = st.multiselect(
+                "참가할 세트를 모두 선택해주세요 (예상 시간)",
+                options=set_options,
+                default=set_options
+            )
+            
+            lc1, lc2 = st.columns(2)
             with lc1: level = st.selectbox("참가자 레벨", LEVELS)
-            with lc2: late_note = st.text_input("도착 예정 시간 (늦참 시)")
+            # note는 이제 세트 정보로 자동 채워짐, 추가 메모 필요시 부활 가능
             
             st.markdown("---")
             if not is_expired: st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
@@ -733,19 +747,28 @@ with tab1:
             
             if st.form_submit_button(submit_label):
                 if name and phone:
-                    is_black, reason = check_blacklist(name, phone)
-                    if is_black: st.error(f"🚨 신청 불가: {reason}")
+                    if not selected_sets:
+                        st.error("❌ 최소 1개 이상의 세트를 선택해야 합니다.")
                     else:
-                        final_name = f"[VEGA] {name}" if is_vega else name
-                        try:
-                            add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, late_note)
-                            st.session_state['reg_success'] = True
-                            st.session_state['reg_name'] = name
-                            st.session_state['reg_is_late'] = is_expired
-                            st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ 저장 중 오류: {str(e)}")
+                        is_black, reason = check_blacklist(name, phone)
+                        if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
+                        else:
+                            final_name = f"[VEGA] {name}" if is_vega else name
+                            
+                            # [핵심] 선택한 세트 정보를 '비고'란에 저장 (예: "1·2, 3·4")
+                            # "1·2세트 (19:20...)" 에서 앞부분 "1·2" 만 추출해서 저장
+                            simple_sets = [s.split("세트")[0] for s in selected_sets]
+                            note_value = ", ".join(simple_sets)
+                            
+                            try:
+                                add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, note_value)
+                                st.session_state['reg_success'] = True
+                                st.session_state['reg_name'] = name
+                                st.session_state['reg_is_late'] = is_expired
+                                st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ 저장 중 오류: {str(e)}")
                 else: 
                     st.error("필수 입력 누락")
                     st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
@@ -758,8 +781,7 @@ with tab1:
                 if st.form_submit_button("취소하기"):
                     suc, msg = cancel_applicant(c_name, c_phone)
                     if not suc: suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
-                    if suc: 
-                        st.success(msg); st.toast("🗑️ 취소되었습니다.") 
+                    if suc: st.success(msg); st.toast("🗑️ 취소되었습니다.") 
                     else: st.error(msg)
 
         st.divider()
@@ -771,20 +793,7 @@ with tab1:
             st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
             if '1순위' in df_public.columns:
                 pos_counts = df_public['1순위'].value_counts()
-                html_code = """
-<style>
-.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}
-.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
-.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}
-.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}
-.pos-status {font-size: 0.75em; font-weight: bold;}
-.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
-.status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
-.status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
-.status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} 
-</style>
-<div class="pos-container">
-"""
+                html_code = """<style>.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}.pos-status {font-size: 0.75em; font-weight: bold;}.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} </style><div class="pos-container">"""
                 for pos in POSITIONS_ALL:
                     count = pos_counts.get(pos, 0)
                     if count >= 7: status_class, status_text = "status-full", "초과"
@@ -803,7 +812,11 @@ with tab1:
                 df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 확인" if str(x).strip().upper() == "O" else "-")
                 if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
                 if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
+                
+                # [수정] 비고란에 '참가 세트' 정보가 표시됨
                 if '비고' not in df_public.columns: df_public['비고'] = ""
+                # 비고란(세트 정보)이 너무 길면 줄임 (예: 1·2, 3·4...)
+                
                 show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
                 real_cols = [c for c in show_cols if c in df_public.columns]
                 st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
