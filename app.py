@@ -1171,9 +1171,9 @@ with tab5:
 # --- 탭 6: 라인업 생성 (관리자) ---
 with tab6:
     st.header("⚡ 공정 라인업 생성")
-
+    
     lineup_auth = st.empty()
-
+    
     if not st.session_state['lineup_admin_logged_in']:
         with lineup_auth.form("lineup_login"):
             pw2 = st.text_input("비밀번호", type="password")
@@ -1183,9 +1183,9 @@ with tab6:
                     lineup_auth.empty()
                 else:
                     st.error("비밀번호 불일치")
-
+    
     if st.session_state['lineup_admin_logged_in']:
-
+        
         # 안내문구
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=True):
             st.markdown("""
@@ -1205,7 +1205,7 @@ with tab6:
         if not data: st.warning("참가자 없음")
         else:
             df = pd.DataFrame(data)
-
+            
             with st.expander("💬 카카오톡 공유 텍스트 생성 (클릭)"):
                 kakao_txt = generate_kakao_text(df)
                 st.code(kakao_txt, language="text")
@@ -1260,7 +1260,7 @@ with tab6:
                     st.session_state['fair_results'] = generate_vega_priority_schedule(df)
                     st.success("완료!")
                     st.rerun()
-
+                    
             if 'fair_results' in st.session_state:
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
@@ -1270,19 +1270,19 @@ with tab6:
                     for p in team_b: 
                         schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']
                         schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
-
+                
                 for idx, row in df.iterrows():
                     name = row['이름']
                     if name in schedule_map:
                         for r in range(1, 4): 
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
-
+                
                 r_tabs = st.tabs(["1·2", "3·4", "5·6"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
-
+                        
                         def calculate_team_sum(team_list):
                             total = 0
                             for p in team_list:
@@ -1294,7 +1294,7 @@ with tab6:
 
                         sum_a = calculate_team_sum(team_a)
                         sum_b = calculate_team_sum(team_b)
-
+                        
                         def get_admin_badge(p):
                             m = p.get('match_type')
                             if m == '1st': return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
@@ -1309,7 +1309,7 @@ with tab6:
                         if real_players:
                             count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                             count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
-
+                            
                             def get_missing_pos_list(player_list):
                                 current_pos = set()
                                 for p in player_list:
@@ -1332,7 +1332,7 @@ with tab6:
                                 if missing_text_a == missing_text_b: info_msg += f" (공통 제외: {missing_text_a})"
                                 else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                             st.info(info_msg)
-
+                            
                             st.markdown("##### ⚖️ 팀 레벨 합계 (밸런스 확인)")
                             b_col1, b_col2 = st.columns([1, 4])
                             with b_col1:
@@ -1365,7 +1365,7 @@ with tab6:
                                     lv = p.get('레벨', '입문').split(' ')[0]
                                     st.markdown(f"- **{p['assigned_pos']}**: {p['이름']} {badge} <span style='color:gray; font-size:0.8em;'>({lv})</span>", unsafe_allow_html=True)
                                     st.caption(f"└ {get_score_display(p)}")
-
+                        
                         st.markdown("---")
                         bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
                         bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
@@ -1378,6 +1378,7 @@ with tab6:
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             if st.button("저장 (공개)"):
+                final_df = df.copy(); final_df.update(edited_df); update_lineup(final_df); st.success("저장됨")
 
 
 # --- 탭 7: 관리자 ---
