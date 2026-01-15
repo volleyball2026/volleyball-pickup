@@ -242,22 +242,35 @@ def get_my_history(name, phone):
             pass
     return history
 
-# --- [NEW] 영상 관련 함수 추가 (코드 상단 함수 정의 부분에 추가) ---
+# --- [영상 관련 기능 함수 수정] ---
 def save_video_link(url, title):
     sheet = get_sheet_instance(SHEET_VIDEOS)
     if sheet:
-        # 날짜, 제목, 링크 저장
+        # 1. 시트가 비어있으면 '헤더(제목줄)' 먼저 생성
+        if not sheet.get_all_values():
+            sheet.append_row(["날짜", "제목", "URL"])
+            
+        # 2. 그 다음 데이터 저장
         sheet.append_row([datetime.now().strftime("%Y-%m-%d"), title, url])
         st.cache_data.clear()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5) # 갱신 시간 단축 (5초)
 def get_latest_video():
     sheet = get_sheet_instance(SHEET_VIDEOS)
     if sheet:
         try:
-            data = sheet.get_all_records()
-            if data: return data[-1] # 가장 최근 등록한 영상 반환
-        except: return None
+            # get_all_records 대신 get_all_values 사용 (헤더 오류 방지)
+            rows = sheet.get_all_values()
+            
+            # 데이터가 2줄 이상이어야 함 (1번째 줄은 헤더, 2번째 줄부터 데이터)
+            if len(rows) > 1:
+                last_row = rows[-1] # 가장 마지막 줄 가져오기
+                
+                # 데이터가 정상적으로 3칸(날짜, 제목, URL) 있는지 확인
+                if len(last_row) >= 3:
+                    return {"date": last_row[0], "title": last_row[1], "url": last_row[2]}
+        except:
+            return None
     return None
 
 # --- [기록 조회용 함수 추가] ---
@@ -1533,10 +1546,7 @@ with tab7:
             if st.form_submit_button("등록"):
                 add_to_blacklist(b_name, b_phone, b_reason); st.success("등록됨")
 
-        # --- 탭 7: 관리자 내부 ---
-        
-        # ... (기존 블랙리스트 코드 아래에 추가) ...
-
+# --- 탭 7 내부 ---
         st.divider()
         st.subheader("🎬 유튜브 영상 등록")
         with st.form("video_upload"):
@@ -1546,13 +1556,11 @@ with tab7:
             
             if st.form_submit_button("영상 게시하기"):
                 if v_title and v_url:
-                    # 시트 헤더가 없으면 생성 (최초 1회)
-                    sheet_v = get_sheet_instance(SHEET_VIDEOS)
-                    if sheet_v and not sheet_v.get_all_values():
-                        sheet_v.append_row(["date", "title", "url"])
-                        
+                    # [수정] 복잡한 헤더 체크 로직 제거 -> 함수(save_video_link)가 알아서 함
                     save_video_link(v_url, v_title)
                     st.success("영상이 '경기 영상' 탭에 게시되었습니다!")
+                    time.sleep(1.0) # 잠시 대기 후
+                    st.rerun()      # 새로고침해서 바로 반영
                 else:
                     st.error("제목과 링크를 모두 입력해주세요.")
 
