@@ -22,15 +22,20 @@ ADMIN_PASSWORD = "1992"
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
-    "2026.01.14 (Ver 2.5)": [
-        "ℹ️ [가이드] MyPage 능력치(스탯) 설명 추가",
-        "🚀 [성능] 데이터 조회 캐싱 적용 (튕김 방지)",
-        "📊 [MyPage] 개인 능력치 레이더 차트 도입",
-        "❤️ [스탯] '헌신(Dedication)' 지표 신설"
+    "2026.01.15 (Ver 2.9)": [
+        "🗳️ [MVP] **'라인업 보고 투표하기'** 기능 추가 (누가 누군지 확인 가능!)",
+        "🕒 [MVP] 게임 종료(초기화) 후에도 **지난 경기 기록으로 투표 가능**",
+        "✨ [UI] 선수 이름 옆 '투표' 버튼으로 원클릭 참여",
+        "🐛 [버그] 종료된 게임 명단 불러오기 오류 수정"
     ],
-    "2026.01.13 (Ver 2.2)": [
-        "🕒 [기능] 마감 후 '대기/추가' 등록 모드 지원",
-        "📱 [UI] 모바일 최적화: 포지션 현황 카드 그리드 적용"
+    "2026.01.15 (Ver 2.8)": [
+        "🧹 [시스템] 중복 코드 제거 및 전체 최적화 (클린 버전)",
+        "✨ [UI] 참가 신청 시 '시간(세트)' 선택 기능 추가",
+        "🐛 [버그] 라인업 생성 시 참가자 누락 문제 완벽 해결"
+    ],
+    "2026.01.15 (Ver 2.7)": [
+        "⚖️ [로직] 라인업 점수(일일) vs 뱃지 점수(영구) 분리",
+        "🏆 [기능] 뱃지 시스템 & 명예의 전당 적용"
     ]
 }
 
@@ -1125,120 +1130,135 @@ with tab3:
 # --- 탭 4: MVP ---
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
-        st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
+        st.write("🔒 본인 인증 후, 경기 내용을 떠올리며 가장 인상 깊었던 선수에게 투표해주세요.")
 
     st.header("🏆 MVP 투표")
     
-    # 1. 현재 신청자 명단 로드
+    # 1. 데이터 로드
     apps = load_applicants()
     
-    # 2. [핵심] 명단이 없으면(게임 종료됨), 과거 기록에서 '가장 최근 게임' 멤버를 불러옴
+    # 종료된 게임(명단 없음)일 경우 과거 기록 로드
+    is_archived = False
     if not apps:
-        all_history = load_all_history() # 함수 정의 필요
+        all_history = load_all_history()
         if all_history:
-            # 가장 마지막에 저장된(최신) 날짜 가져오기
-            last_record = all_history[-1]
-            last_date = last_record.get('일시')
-            
-            # 해당 날짜의 참가자만 필터링 (중복 제거)
+            last_date = all_history[-1].get('일시')
             temp_players = {}
             for h in all_history:
                 if h.get('일시') == last_date:
-                    # 이름과 연락처를 키로 사용하여 중복 제거
                     key = (h.get('이름'), h.get('연락처'))
-                    if key not in temp_players:
-                        temp_players[key] = h
-            
+                    if key not in temp_players: temp_players[key] = h
             if temp_players:
                 apps = list(temp_players.values())
-                st.info(f"📢 현재 진행 중인 게임이 없어, **최근 종료된 게임 ({last_date})** 명단으로 투표를 진행합니다.")
+                is_archived = True
+                st.info(f"📢 지난 게임 **({last_date})** 명단으로 투표를 진행합니다.")
 
     if not apps:
-        st.warning("투표할 참가자 명단이 없습니다. (기록된 게임 없음)")
+        st.warning("투표할 대상이 없습니다.")
     else:
-        auth_placeholder = st.empty()
-        
-        # 인증 전 화면
+        # 2. 본인 인증
         if not st.session_state['mvp_voter_verified']:
-            with auth_placeholder.form("mvp_auth"):
-                st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
-                voter = st.text_input("이름")
-                vphone = st.text_input("연락처")
-                if st.form_submit_button("확인"):
+            with st.form("mvp_auth"):
+                st.info("🔒 투표를 위해 본인 인증을 해주세요.")
+                c1, c2 = st.columns(2)
+                with c1: voter = st.text_input("이름")
+                with c2: vphone = st.text_input("연락처")
+                if st.form_submit_button("인증하기"):
                     clean_vphone = normalize_phone(vphone)
                     found = False
-                    
-                    # 명단(apps)에서 본인 확인
                     for p in apps:
-                        # [VEGA] 태그 처리
                         p_name_real = str(p['이름']).replace("[VEGA] ", "").strip()
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
-                            found = True
-                            break
-                    
+                            found = True; break
                     if found:
                         st.session_state['mvp_voter_verified'] = True
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
-                        auth_placeholder.empty()
                         st.rerun()
-                    else:
-                        st.error("명단에 없는 정보입니다. (이름과 연락처를 확인해주세요)")
+                    else: st.error("명단에 없는 정보입니다.")
+        
+        # 3. 투표 화면 (인증 완료 시)
+        else:
+            st.success(f"👋 안녕하세요, **{st.session_state['mvp_voter_name']}**님! 오늘의 MVP는 누구인가요?")
             
-            if not st.session_state['mvp_voter_verified']:
-                st.divider()
-                st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
+            # [기능 함수] 투표 처리
+            def process_vote(candidate_name):
+                suc, msg = save_mvp_vote(
+                    st.session_state['mvp_voter_name'], 
+                    st.session_state['mvp_voter_phone'], 
+                    candidate_name
+                )
+                if suc: 
+                    st.toast(f"🎉 {candidate_name}님에게 투표했습니다!", icon="🗳️")
+                    time.sleep(1)
+                    st.rerun()
+                else: 
+                    st.error(msg)
 
-        # 인증 후 화면
-        if st.session_state['mvp_voter_verified']:
-            st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
+            df_vote = pd.DataFrame(apps)
             
-            # 투표 양식
-            with st.form("mvp_submit"):
-                # 후보 리스트 생성
-                candidate_list = [p['이름'] for p in apps]
-                target_name = st.selectbox("🏅 MVP 선택 (오늘 가장 빛난 선수)", candidate_list)
+            # A. 진행 중인 게임 (라인업 정보가 있는 경우) -> 라인업 뷰 제공
+            if not is_archived and '확정1' in df_vote.columns:
+                st.markdown("### 🏟️ 라인업을 보며 투표하기")
+                st.caption("각 세트별 활약상을 떠올려보세요! (이름 옆 버튼 클릭)")
                 
-                if st.form_submit_button("투표하기"):
-                    suc, msg = save_mvp_vote(
-                        st.session_state['mvp_voter_name'], 
-                        st.session_state['mvp_voter_phone'], 
-                        target_name
-                    )
-                    if suc: 
-                        st.success(msg)
-                    else: 
-                        st.error(msg)
+                tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
+                for i, tab in enumerate(tabs):
+                    with tab:
+                        col_pos = f"확정{i+1}"; col_team = f"팀{i+1}"
+                        # 데이터 필터링
+                        playing = df_vote[df_vote[col_pos].astype(str).str.strip() != '']
+                        if playing.empty:
+                            st.info("이 세트의 배정 정보가 없습니다.")
+                            continue
+                            
+                        c1, c2 = st.columns(2)
+                        # A팀 출력
+                        with c1:
+                            st.error("🔴 A팀")
+                            for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
+                                b_col1, b_col2 = st.columns([3, 1])
+                                with b_col1: st.write(f"**{r[col_pos]}**: {r['이름']}")
+                                with b_col2: 
+                                    if st.button("투표", key=f"v_a_{i}_{r['이름']}"): process_vote(r['이름'])
+                        # B팀 출력
+                        with c2:
+                            st.info("🔵 B팀")
+                            for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
+                                b_col1, b_col2 = st.columns([3, 1])
+                                with b_col1: st.write(f"**{r[col_pos]}**: {r['이름']}")
+                                with b_col2: 
+                                    if st.button("투표", key=f"v_b_{i}_{r['이름']}"): process_vote(r['이름'])
             
-            if st.button("로그아웃"):
+            # B. 종료된 게임 or 라인업 없음 -> 카드 그리드 뷰 제공
+            else:
+                st.markdown("### 👥 전체 참가자 명단")
+                cols = st.columns(3)
+                for idx, row in df_vote.iterrows():
+                    with cols[idx % 3]:
+                        with st.container(border=True):
+                            st.write(f"**{row['이름']}**")
+                            st.caption(f"{row.get('레벨','')} | {row.get('1순위','')}")
+                            if st.button("🗳️ 투표", key=f"v_grid_{idx}", use_container_width=True):
+                                process_vote(row['이름'])
+
+            st.divider()
+            if st.button("로그아웃 (다른 사람 투표)"):
                 st.session_state['mvp_voter_verified'] = False
                 st.rerun()
 
-            st.divider()
+            # 결과 및 명예의 전당
             st.subheader("📊 실시간 득표 현황 (Top 5)")
             rank = get_mvp_ranking_today()
-            
             if not rank.empty: 
-                # 1등 강조
                 top1 = rank.iloc[0]
-                if top1['득표수'] > 0:
-                    st.markdown(f"🥇 **현재 1위: {top1['이름']} ({top1['득표수']}표)**")
+                if top1['득표수'] > 0: st.markdown(f"🥇 **1위: {top1['이름']} ({top1['득표수']}표)**")
                 st.dataframe(rank.head(5), hide_index=True, use_container_width=True)
-            else: 
-                st.info("아직 투표가 없습니다.")
+            else: st.info("아직 투표가 없습니다.")
 
-            st.markdown("---")
-            st.subheader("👑 명예의 전당")
-            hof = get_mvp_hall_of_fame()
-            if len(hof) > 0: 
-                # 보기 좋게 컬럼 정리
-                # DataFrame 컬럼명이 있는지 확인 후 처리
-                cols = ['일시', 'MVP후보', '득표수']
-                if all(c in hof.columns for c in cols):
-                    hof_display = hof.rename(columns={'일시': '날짜', 'MVP후보': 'MVP'})
-                    st.dataframe(hof_display[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
-                else:
-                    st.dataframe(hof, use_container_width=True)
+            with st.expander("👑 명예의 전당 보기"):
+                hof = get_mvp_hall_of_fame()
+                if len(hof)>0: st.dataframe(hof[['일시','MVP후보','득표수']], hide_index=True, use_container_width=True)
 
 # --- 탭 5: 소리함 ---
 with tab5:
