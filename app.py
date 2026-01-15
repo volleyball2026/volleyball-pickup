@@ -615,8 +615,21 @@ with tab1:
     if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
     if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
 
-    if current_game:
-        # (상단 게임 정보 표시 부분은 기존 코드 유지...)
+    # [핵심 1] 게임이 없거나 'CLOSED' 상태면 대기 화면 표시
+    if not current_game or current_game.get('제목') == 'CLOSED':
+        st.info("💤 **현재 모집 중인 게임이 없습니다.**")
+        st.markdown("""
+        ### 🔜 다음 게임을 준비 중입니다!
+        
+        관리자가 새로운 게임을 개설할 때까지 잠시만 기다려주세요.
+        보통 **매주 일요일**에 새로운 모집이 시작됩니다.
+        
+        - 문의사항은 [오픈채팅방](https://open.kakao.com/o/gf1s6t9h)을 이용해주세요.
+        """)
+        st.markdown("<div style='text-align: center; font-size: 60px; margin-top: 20px;'>🏐</div>", unsafe_allow_html=True)
+        
+    else:
+        # === 정상 모집 화면 ===
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
         except: deadline_dt = datetime(2099, 12, 31, 23, 59)
@@ -624,7 +637,31 @@ with tab1:
         is_expired = now > deadline_dt
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
-        # ... (중략) ... 
+        
+        c1, c2 = st.columns(2)
+        with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
+        with c2: 
+            st.write(f"**💰 참가비:** {current_game['참가비']}")
+            if is_expired: st.error(f"**⏰ 마감:** {deadline_str} (종료)")
+            else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
+        st.divider()
+
+        if st.session_state['reg_success']:
+            msg_name = st.session_state['reg_name']
+            if st.session_state['reg_is_late']:
+                st.success(f"✅ {msg_name}님, **대기(추가) 명단**에 등록되었습니다!")
+                st.markdown("""📢 **잠깐! 아직 확정이 아닙니다.**\n마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.""")
+                st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
+            else:
+                st.success(f"✅ {msg_name}님 신청 완료!")
+            
+            if st.button("확인 (메시지 닫기)"):
+                st.session_state['reg_success'] = False
+                st.rerun()
+            st.divider()
+
+        if is_expired:
+            st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.")
         
         st.write("### 👇 참가 신청서")
         with st.form("apply_form"):
@@ -634,6 +671,7 @@ with tab1:
             
             with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
                 st.markdown("- **입문**: 기본기 부족\n- **초급**: 경험 적음\n- **중급**: 전국대회 가능\n- **상급**: 전국대회 상위\n- **최상급**: 선출 준함")
+            
             is_vega = st.checkbox("순천VEGA 회원 (우선권)")
             
             st.markdown("---")
@@ -652,7 +690,7 @@ with tab1:
             with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
             with p3: pos3 = st.selectbox("3순위 (수비/속공)", ["선택 안함"] + POSITIONS_3RD)
             
-            # [NEW] 제외 포지션 선택 (핵심)
+            # 제외 포지션 선택
             st.markdown("---")
             st.write("**🚫 제외(기피) 포지션 선택 (선택 사항)**")
             st.caption("부상이나 실력 문제로 **'절대 수행 불가능한'** 포지션이 있다면 선택해주세요. (최대 2개)")
@@ -663,21 +701,21 @@ with tab1:
             if st.form_submit_button(submit_label):
                 if name and phone:
                     if not selected_sets: st.error("❌ 최소 1개 이상의 세트를 선택해야 합니다.")
-                    elif pos1 in excluded_pos: st.error("❌ 1순위 포지션은 제외할 수 없습니다.") # 모순 방지
+                    elif pos1 in excluded_pos: st.error("❌ 1순위 포지션은 제외할 수 없습니다.")
                     else:
                         is_black, reason = check_blacklist(name, phone)
                         if is_black: st.error(f"🚨 신청 불가: {reason}")
                         else:
                             final_name = f"[VEGA] {name}" if is_vega else name
                             sets_str = ", ".join([s.split("세트")[0] for s in selected_sets])
-                            excluded_str = ", ".join(excluded_pos) # 리스트 -> 문자열 변환
+                            excluded_str = ", ".join(excluded_pos)
                             
                             try:
                                 add_applicant(
                                     final_name, phone, level, pos1, 
                                     "" if pos2=="선택 안함" else pos2, 
                                     "" if pos3=="선택 안함" else pos3, 
-                                    sets_str, excluded_str # 제외 정보 저장
+                                    sets_str, excluded_str
                                 )
                                 st.session_state['reg_success'] = True
                                 st.session_state['reg_name'] = name
@@ -686,11 +724,93 @@ with tab1:
                                 st.rerun()
                             except Exception as e: st.error(f"❌ 저장 중 오류: {str(e)}")
                 else: st.error("필수 입력 누락"); st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
-    
-        # (취소 및 현황 표시는 기존 코드와 동일)
+        
         with st.expander("🗑️ 신청 취소"):
-            # ... 기존 코드 ...
-            pass # (지면 관계상 생략, 기존 코드 사용하세요)
+            with st.form("cancel"):
+                cc1, cc2 = st.columns(2)
+                with cc1: c_name = st.text_input("이름")
+                with cc2: c_phone = st.text_input("연락처")
+                if st.form_submit_button("취소하기"):
+                    if is_expired: save_suggestion(f"🚨 [마감후취소] {c_name} ({c_phone}) 취소")
+                    suc, msg = cancel_applicant(c_name, c_phone)
+                    if not suc: suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
+                    if suc: 
+                        st.success(msg); st.toast("🗑️ 취소되었습니다.")
+                        time.sleep(1.5); st.rerun() 
+                    else: st.error(msg)
+
+        # [핵심 2] 신청자가 없어도 기본 틀(현황판)은 보여주도록 수정
+        st.divider()
+        st.subheader("📊 실시간 참가 신청 현황")
+        applicants = load_applicants()
+        
+        if applicants:
+            df_public = pd.DataFrame(applicants)
+            st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
+            if '1순위' in df_public.columns:
+                pos_counts = df_public['1순위'].value_counts()
+                html_code = """<style>.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}.pos-status {font-size: 0.75em; font-weight: bold;}.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} </style><div class="pos-container">"""
+                for pos in POSITIONS_ALL:
+                    count = pos_counts.get(pos, 0)
+                    if count >= 7: status_class, status_text = "status-full", "초과"
+                    elif count == 6: status_class, status_text = "status-max", "마감"
+                    elif count == 5: status_class, status_text = "status-warn", "임박"
+                    else: status_class, status_text = "status-safe", "여유"
+                    html_code += f"""<div class="pos-card"><div class="pos-title">{pos}</div><div class="pos-count" style="color:#333;">{count}<span style="font-size:0.5em; font-weight:normal; color:#888;">명</span></div><div class="pos-status"><span class="{status_class}">{status_text}</span></div></div>"""
+                html_code += "</div>"
+                st.markdown(html_code, unsafe_allow_html=True)
+            
+            st.divider()
+            col_list, col_stats = st.columns([2.2, 1])
+            with col_list:
+                st.markdown("##### 📋 신청자 명단")
+                if '입금' not in df_public.columns: df_public['입금'] = "X"
+                df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 확인" if str(x).strip().upper() == "O" else "-")
+                if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
+                if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
+                
+                # 비고란에 세트 정보, 제외 포지션 정보 등을 표시하고 싶다면 여기서 처리
+                if '비고' not in df_public.columns: df_public['비고'] = ""
+                
+                show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
+                real_cols = [c for c in show_cols if c in df_public.columns]
+                st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
+
+            with col_stats:
+                st.markdown("##### 🍰 레벨 분포")
+                if '레벨' in df_public.columns:
+                    level_counts = df_public['레벨'].value_counts()
+                    chart_data = []
+                    for lv in LEVELS: 
+                        cnt = level_counts.get(lv, 0)
+                        legend_label = f"{lv} ({cnt}명)"
+                        chart_text = f"{lv} {cnt}명" if cnt > 0 else ""
+                        chart_data.append({"Level": lv, "Count": cnt, "LegendLabel": legend_label, "ChartText": chart_text})
+                    df_chart = pd.DataFrame(chart_data)
+                    base = alt.Chart(df_chart).encode(theta=alt.Theta("Count", stack=True))
+                    pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(color=alt.Color("LegendLabel", title="레벨 현황", sort=None), tooltip=["Level", "Count"])
+                    text = base.mark_text(radius=60).encode(text=alt.Text("ChartText"), order=alt.Order("Level"), color=alt.value("black"))
+                    st.altair_chart(pie + text, use_container_width=True)
+
+                st.markdown("##### 📌 요약 정보")
+                with st.container(border=True):
+                    total_cnt = len(df_public)
+                    vega_cnt = len([n for n in df_public['이름'] if "[VEGA]" in str(n)])
+                    pickup_cnt = total_cnt - vega_cnt
+                    if not is_expired:
+                        diff = deadline_dt - now
+                        hours = diff.seconds // 3600 + (diff.days * 24)
+                        mins = (diff.seconds % 3600) // 60
+                        time_msg = f"{hours}시간 {mins}분 전"
+                        time_color = "blue"
+                    else:
+                        time_msg = "마감됨"
+                        time_color = "red"
+                    st.markdown(f"""- **총 인원**: **{total_cnt}명**\n- <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>\n- **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>""", unsafe_allow_html=True)
+        else:
+            # 신청자가 없을 때 표시할 화면 (현황판 사라짐 방지)
+            st.info("👋 **아직 신청자가 없습니다.** 첫 번째 참가자가 되어보세요!")
+            st.metric("현재 참가 인원", "0명")
             
 # --- 탭 2: 라인업 공개 ---
 with tab2:
