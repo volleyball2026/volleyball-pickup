@@ -453,6 +453,7 @@ def assign_positions_in_team(team_members):
                 
     return team_members
 
+# [최종] 동적 어드밴티지 + 세트별 참가 여부 필터링 적용
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     global_history = {p['이름']: 0 for p in base_players}
@@ -460,20 +461,36 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
-        current_players = [p.copy() for p in base_players]
+        # [NEW] 이 세트에 참가하는 선수만 필터링
+        # round_num 1 -> "1·2", 2 -> "3·4", 3 -> "5·6" 키워드 확인
+        target_set_keyword = f"{round_num*2-1}·{round_num*2}" 
         
-        for p in current_players:
+        round_pool = []
+        for p in base_players:
+            # 비고란에 '세트'라는 말이 없으면(옛날 데이터) 무조건 참가, 있으면 키워드 체크
+            note = str(p.get('비고', ''))
+            # "1·2" 같은 숫자가 있으면 필터링 작동, 없으면(빈칸) 모두 참가로 간주(유연성)
+            if any(char.isdigit() for char in note): 
+                if target_set_keyword in note:
+                    round_pool.append(p.copy())
+            else:
+                # 비고란이 비어있거나 메모만 있는 경우 (참가로 간주)
+                round_pool.append(p.copy())
+
+        # 1. 점수 계산 (이번 라운드 참가자만)
+        for p in round_pool:
             score, reason = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = score
             p['score_reason'] = reason
 
-        current_players.sort(key=lambda x: x['priority_score'], reverse=True)
+        # 2. 정렬
+        round_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        total_pool = len(current_players)
+        total_pool = len(round_pool)
         match_capacity = total_pool 
         
-        selected_players = current_players[:match_capacity]
-        waiting_players = current_players[match_capacity:]
+        selected_players = round_pool[:match_capacity]
+        waiting_players = round_pool[match_capacity:]
         
         for wp in waiting_players:
             wp['assigned_pos'] = "대기"
@@ -567,6 +584,7 @@ def generate_vega_priority_schedule(df):
         final_team_b = assign_positions_in_team(final_team_b_list)
         final_team_b.extend(waiting_players)
         
+        # [중요] 다음 세트를 위한 누적 (Daily Update)
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
