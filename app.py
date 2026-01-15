@@ -1134,7 +1134,6 @@ with tab4:
 
     st.header("🏆 MVP 투표")
     
-    # 1. 데이터 로드
     apps = load_applicants()
     
     # 종료된 게임(명단 없음)일 경우 과거 기록 로드
@@ -1156,7 +1155,7 @@ with tab4:
     if not apps:
         st.warning("투표할 대상이 없습니다.")
     else:
-        # 2. 본인 인증
+        # 본인 인증
         if not st.session_state['mvp_voter_verified']:
             with st.form("mvp_auth"):
                 st.info("🔒 투표를 위해 본인 인증을 해주세요.")
@@ -1177,11 +1176,10 @@ with tab4:
                         st.rerun()
                     else: st.error("명단에 없는 정보입니다.")
         
-        # 3. 투표 화면 (인증 완료 시)
+        # 투표 화면
         else:
             st.success(f"👋 안녕하세요, **{st.session_state['mvp_voter_name']}**님! 오늘의 MVP는 누구인가요?")
             
-            # [기능 함수] 투표 처리
             def process_vote(candidate_name):
                 suc, msg = save_mvp_vote(
                     st.session_state['mvp_voter_name'], 
@@ -1197,8 +1195,8 @@ with tab4:
 
             df_vote = pd.DataFrame(apps)
             
-            # A. 진행 중인 게임 (라인업 정보가 있는 경우) -> 라인업 뷰 제공
-            if not is_archived and '확정1' in df_vote.columns:
+            # [A] 라인업 정보가 살아있는 경우 (가장 이상적인 뷰)
+            if not is_archived and '확정1' in df_vote.columns and df_vote['확정1'].astype(str).str.strip().any():
                 st.markdown("### 🏟️ 라인업을 보며 투표하기")
                 st.caption("각 세트별 활약상을 떠올려보세요! (이름 옆 버튼 클릭)")
                 
@@ -1206,14 +1204,12 @@ with tab4:
                 for i, tab in enumerate(tabs):
                     with tab:
                         col_pos = f"확정{i+1}"; col_team = f"팀{i+1}"
-                        # 데이터 필터링
                         playing = df_vote[df_vote[col_pos].astype(str).str.strip() != '']
                         if playing.empty:
                             st.info("이 세트의 배정 정보가 없습니다.")
                             continue
                             
                         c1, c2 = st.columns(2)
-                        # A팀 출력
                         with c1:
                             st.error("🔴 A팀")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
@@ -1221,7 +1217,6 @@ with tab4:
                                 with b_col1: st.write(f"**{r[col_pos]}**: {r['이름']}")
                                 with b_col2: 
                                     if st.button("투표", key=f"v_a_{i}_{r['이름']}"): process_vote(r['이름'])
-                        # B팀 출력
                         with c2:
                             st.info("🔵 B팀")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
@@ -1230,24 +1225,28 @@ with tab4:
                                 with b_col2: 
                                     if st.button("투표", key=f"v_b_{i}_{r['이름']}"): process_vote(r['이름'])
             
-            # B. 종료된 게임 or 라인업 없음 -> 카드 그리드 뷰 제공
+            # [B] 데이터가 삭제되어 비상 복구된 경우 (리스트 뷰로 개선)
             else:
                 st.markdown("### 👥 전체 참가자 명단")
-                cols = st.columns(3)
+                st.caption("팀 정보가 삭제되어 전체 명단으로 표시됩니다.")
+                
                 for idx, row in df_vote.iterrows():
-                    with cols[idx % 3]:
-                        with st.container(border=True):
-                            st.write(f"**{row['이름']}**")
-                            st.caption(f"{row.get('레벨','')} | {row.get('1순위','')}")
-                            if st.button("🗳️ 투표", key=f"v_grid_{idx}", use_container_width=True):
-                                process_vote(row['이름'])
+                    # 그리드 대신 깔끔한 리스트 스타일 적용
+                    with st.container():
+                        lc1, lc2, lc3 = st.columns([2, 2, 1])
+                        with lc1: st.write(f"**{row['이름']}**")
+                        with lc2: 
+                            pos_info = row.get('확정포지션') or row.get('1순위') or "-"
+                            st.caption(f"포지션: {pos_info}")
+                        with lc3: 
+                            if st.button("투표", key=f"v_list_{idx}"): process_vote(row['이름'])
+                        st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
 
             st.divider()
             if st.button("로그아웃 (다른 사람 투표)"):
                 st.session_state['mvp_voter_verified'] = False
                 st.rerun()
 
-            # 결과 및 명예의 전당
             st.subheader("📊 실시간 득표 현황 (Top 5)")
             rank = get_mvp_ranking_today()
             if not rank.empty: 
@@ -1258,8 +1257,9 @@ with tab4:
 
             with st.expander("👑 명예의 전당 보기"):
                 hof = get_mvp_hall_of_fame()
-                if len(hof)>0: st.dataframe(hof[['일시','MVP후보','득표수']], hide_index=True, use_container_width=True)
-
+                if len(hof)>0: 
+                    if 'MVP후보' in hof.columns: hof = hof.rename(columns={'MVP후보':'MVP', '일시':'날짜'})
+                    st.dataframe(hof[['날짜','MVP','득표수']], hide_index=True, use_container_width=True)
 # --- 탭 5: 소리함 ---
 with tab5:
     st.header("🗣️ 소리함 (익명)")
@@ -1525,8 +1525,7 @@ with tab7:
                 if pw == ADMIN_PASSWORD:
                     st.session_state['admin_logged_in'] = True
                     admin_auth.empty()
-                else:
-                    st.error("비밀번호 불일치")
+                else: st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
         st.subheader("✅ 참가 확인 관리 (시범운영)")
@@ -1584,23 +1583,28 @@ with tab7:
                 time.sleep(1.5)
                 st.rerun()
         
-        # [NEW] 게임 종료 기능 (완전 종료 처리)
+        # [수정된 게임 종료 로직]
         st.divider()
         st.subheader("🏁 현재 게임 종료 (수동)")
         with st.expander("⚠️ 게임 종료 및 모집 마감 (클릭)"):
-            st.warning("현재 참가자 명단을 저장(아카이빙)하고, **모집 상태를 '종료'로 변경**합니다.\n참가 신청 화면에 '모집 중인 게임 없음' 안내가 표시됩니다.")
+            st.warning("""
+            **[주의]** 이 버튼을 누르면:
+            1. 현재 명단을 '경기기록'에 저장합니다.
+            2. 모집 상태를 '종료(CLOSED)'로 변경하여 추가 신청을 막습니다.
+            3. **명단은 삭제하지 않습니다.** (MVP 투표 및 라인업 조회를 위해 유지)
+            """)
             if st.button("현재 게임 종료하기"):
                 archive_current_game() # 기록 저장
-                clear_applicants()     # 명단 삭제
                 
-                # [핵심] 'CLOSED'라는 이름의 더미 게임 정보를 저장하여 탭 1에서 인식하게 함
+                # [중요] clear_applicants()를 제거하여 명단 유지!
+                # 대신 'CLOSED' 상태만 적용
                 close_info = {
                     "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
                     "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
                 }
                 save_game_info(close_info)
                 
-                st.success("게임이 종료되었습니다! 참가 신청 탭이 대기 화면으로 변경됩니다.")
+                st.success("게임이 종료되었습니다! (명단은 유지됩니다)")
                 time.sleep(1.5)
                 st.rerun()
 
