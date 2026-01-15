@@ -453,31 +453,37 @@ def assign_positions_in_team(team_members):
                 
     return team_members
 
-# [최종] 동적 어드밴티지 + 세트별 참가 여부 필터링 적용
+# [수정] 동적 어드밴티지 + 세트별 참가 여부 필터링 (로직 개선)
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
+    # 매 게임 0점부터 시작
     global_history = {p['이름']: 0 for p in base_players}
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # [NEW] 이 세트에 참가하는 선수만 필터링
-        # round_num 1 -> "1·2", 2 -> "3·4", 3 -> "5·6" 키워드 확인
-        target_set_keyword = f"{round_num*2-1}·{round_num*2}" 
+        # [NEW] 세트 필터링 로직 개선
+        # - 기존: 숫자가 있으면 무조건 필터링 -> 오작동 ("7시" 입력자 제외됨)
+        # - 변경: "1·2", "3·4" 등 명확한 세트 키워드가 있을 때만 필터링
+        target_set_keyword = f"{round_num*2-1}·{round_num*2}" # 예: "1·2"
+        valid_set_markers = ["1·2", "3·4", "5·6"] # 인식할 키워드 목록
         
         round_pool = []
         for p in base_players:
-            # 비고란에 '세트'라는 말이 없으면(옛날 데이터) 무조건 참가, 있으면 키워드 체크
             note = str(p.get('비고', ''))
-            # "1·2" 같은 숫자가 있으면 필터링 작동, 없으면(빈칸) 모두 참가로 간주(유연성)
-            if any(char.isdigit() for char in note): 
+            
+            # 비고에 세트 키워드가 하나라도 포함되어 있는지 확인
+            has_set_info = any(marker in note for marker in valid_set_markers)
+            
+            if has_set_info:
+                # 세트 정보가 있다면, 현재 세트 키워드가 있는지 확인
                 if target_set_keyword in note:
                     round_pool.append(p.copy())
             else:
-                # 비고란이 비어있거나 메모만 있는 경우 (참가로 간주)
+                # 세트 정보가 없다면(단순 메모 or 빈칸) -> 무조건 참가로 간주
                 round_pool.append(p.copy())
 
-        # 1. 점수 계산 (이번 라운드 참가자만)
+        # 1. 점수 계산
         for p in round_pool:
             score, reason = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = score
@@ -499,6 +505,7 @@ def generate_vega_priority_schedule(df):
         vegas_pool = [p for p in selected_players if "[VEGA]" in p['이름']]
         pickups_pool = [p for p in selected_players if "[VEGA]" not in p['이름']]
         
+        # 밸런싱 시뮬레이션
         def run_simulation(size_a):
             v_pool = [p.copy() for p in vegas_pool]
             p_pool = [p.copy() for p in pickups_pool]
@@ -528,8 +535,8 @@ def generate_vega_priority_schedule(df):
                 def get_lv(p): return LEVEL_MAP.get(p.get('레벨', '입문').split(" ")[0], 1)
                 
                 cur_a_sum = sum(get_lv(p) for p in sim_team_a)
-                all_p_sum = sum(get_lv(p) for p in p_pool)
-                total_sum = cur_a_sum + all_p_sum
+                # all_p_sum = sum(get_lv(p) for p in p_pool) # 미사용
+                total_sum = cur_a_sum + sum(get_lv(p) for p in p_pool)
                 target_a = total_sum * (size_a / match_capacity) 
                 
                 best_comb = None
@@ -584,7 +591,7 @@ def generate_vega_priority_schedule(df):
         final_team_b = assign_positions_in_team(final_team_b_list)
         final_team_b.extend(waiting_players)
         
-        # [중요] 다음 세트를 위한 누적 (Daily Update)
+        # 다음 세트 누적
         for p in final_team_a + final_team_b:
             name = p['이름']
             match_type = p.get('match_type')
@@ -687,10 +694,14 @@ with tab0:
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
+    # 날짜 라이브러리 임포트 (timedelta 사용을 위해)
+    from datetime import timedelta
+
     if 'reg_success' not in st.session_state: st.session_state['reg_success'] = False
     if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
     if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
 
+    # 마감 여부 확인 로직
     if current_game:
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -735,23 +746,13 @@ with tab1:
             
             is_vega = st.checkbox("순천VEGA 회원 (우선권)")
             
-            # [수정] 도착 시간 입력 대신 '참가 가능 세트' 멀티 선택 (시간 안내 포함)
             st.markdown("---")
             st.write("**⏱️ 참가 가능 시간(세트) 선택**")
-            set_options = [
-                "1·2세트 (19:20 ~ 20:00)", 
-                "3·4세트 (20:00 ~ 20:40)", 
-                "5·6세트 (20:40 ~ 21:20)"
-            ]
-            selected_sets = st.multiselect(
-                "참가할 세트를 모두 선택해주세요 (예상 시간)",
-                options=set_options,
-                default=set_options
-            )
+            set_options = ["1·2세트 (19:20 ~ 20:00)", "3·4세트 (20:00 ~ 20:40)", "5·6세트 (20:40 ~ 21:20)"]
+            selected_sets = st.multiselect("참가할 세트를 모두 선택해주세요 (예상 시간)", options=set_options, default=set_options)
             
             lc1, lc2 = st.columns(2)
             with lc1: level = st.selectbox("참가자 레벨", LEVELS)
-            # note는 이제 세트 정보로 자동 채워짐, 추가 메모 필요시 부활 가능
             
             st.markdown("---")
             if not is_expired: st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
@@ -765,19 +766,14 @@ with tab1:
             
             if st.form_submit_button(submit_label):
                 if name and phone:
-                    if not selected_sets:
-                        st.error("❌ 최소 1개 이상의 세트를 선택해야 합니다.")
+                    if not selected_sets: st.error("❌ 최소 1개 이상의 세트를 선택해야 합니다.")
                     else:
                         is_black, reason = check_blacklist(name, phone)
                         if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
                         else:
                             final_name = f"[VEGA] {name}" if is_vega else name
-                            
-                            # [핵심] 선택한 세트 정보를 '비고'란에 저장 (예: "1·2, 3·4")
-                            # "1·2세트 (19:20...)" 에서 앞부분 "1·2" 만 추출해서 저장
                             simple_sets = [s.split("세트")[0] for s in selected_sets]
                             note_value = ", ".join(simple_sets)
-                            
                             try:
                                 add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, note_value)
                                 st.session_state['reg_success'] = True
@@ -785,11 +781,8 @@ with tab1:
                                 st.session_state['reg_is_late'] = is_expired
                                 st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ 저장 중 오류: {str(e)}")
-                else: 
-                    st.error("필수 입력 누락")
-                    st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
+                            except Exception as e: st.error(f"❌ 저장 중 오류: {str(e)}")
+                else: st.error("필수 입력 누락"); st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
         
         with st.expander("🗑️ 신청 취소"):
             with st.form("cancel"):
@@ -797,9 +790,19 @@ with tab1:
                 with cc1: c_name = st.text_input("이름")
                 with cc2: c_phone = st.text_input("연락처")
                 if st.form_submit_button("취소하기"):
+                    # [NEW] 마감 후 취소 시 관리자 알림(소리함) 전송
+                    if is_expired:
+                        save_suggestion(f"🚨 [마감후취소] {c_name}님이 참가를 취소했습니다. (연락처: {c_phone})")
+                    
                     suc, msg = cancel_applicant(c_name, c_phone)
                     if not suc: suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
-                    if suc: st.success(msg); st.toast("🗑️ 취소되었습니다.") 
+                    
+                    if suc: 
+                        st.success(msg)
+                        st.toast("🗑️ 취소되었습니다.")
+                        if is_expired: st.warning("마감 후 취소 사실이 운영진에게 전달되었습니다.")
+                        time.sleep(1.5)
+                        st.rerun()
                     else: st.error(msg)
 
         st.divider()
@@ -830,11 +833,7 @@ with tab1:
                 df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 확인" if str(x).strip().upper() == "O" else "-")
                 if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
                 if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
-                
-                # [수정] 비고란에 '참가 세트' 정보가 표시됨
                 if '비고' not in df_public.columns: df_public['비고'] = ""
-                # 비고란(세트 정보)이 너무 길면 줄임 (예: 1·2, 3·4...)
-                
                 show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
                 real_cols = [c for c in show_cols if c in df_public.columns]
                 st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
@@ -866,9 +865,7 @@ with tab1:
                         mins = (diff.seconds % 3600) // 60
                         time_msg = f"{hours}시간 {mins}분 전"
                         time_color = "blue"
-                    else:
-                        time_msg = "마감됨"
-                        time_color = "red"
+                    else: time_msg = "마감됨"; time_color = "red"
                     st.markdown(f"""- **총 인원**: **{total_cnt}명**\n- <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>\n- **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>""", unsafe_allow_html=True)
         else: st.info("아직 신청자가 없습니다.")
     else: st.warning("모집 중인 게임이 없습니다.")
