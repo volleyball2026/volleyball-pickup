@@ -692,183 +692,124 @@ with tab0:
     [👉 여순광 배구 픽업 오픈채팅방 입장하기](https://open.kakao.com/o/gf1s6t9h)
     """)
 
-# --- 탭 1: 참가 신청 ---
-with tab1:
-    # 날짜 라이브러리 임포트 (timedelta 사용을 위해)
-    from datetime import timedelta
+# --- 탭 2: 라인업 공개 ---
+with tab2:
+    # [수정] 뱃지/명예의전당 내용 제거하고 기본 가이드로 복귀
+    with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
+        st.markdown("""
+        **1. 배정 기준 (우선순위 점수제)**
+        | 항목 | 점수 | 설명 |
+        | :--- | :--- | :--- |
+        | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
+        | **VEGA 회원** | `+100점` | **우선권 부여** |
+        | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
+        | **기여도** | `+3~10점` | **대기/비선호 포지션** 수행 시 점수 적립 (이번 게임 내 누적) |
 
-    if 'reg_success' not in st.session_state: st.session_state['reg_success'] = False
-    if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
-    if 'reg_is_late' not in st.session_state: st.session_state['reg_is_late'] = False
+        **2. 화면 보는 법**
+        - **팀 확인**: A팀(🔴) / B팀(🔵)
+        - **아이콘**: 
+            - <span style='color:#1565C0; background-color:#E3F2FD; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span> : 1순위 희망 포지션 배정
+            - <span style='color:#2E7D32; background-color:#E8F5E9; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span> : 2순위 희망 포지션 배정
+            - <span style='color:#E65100; background-color:#FFF3E0; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span> : 3순위 희망 포지션 배정
+            - <span style='color:#C62828; background-color:#FFEBEE; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span> : 무작위(임의) 배정
+        """, unsafe_allow_html=True)
 
-    # 마감 여부 확인 로직
-    if current_game:
-        deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
-        try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
-        except: deadline_dt = datetime(2099, 12, 31, 23, 59)
-        now = datetime.utcnow() + timedelta(hours=9)
-        is_expired = now > deadline_dt
-
-        st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
-        c1, c2 = st.columns(2)
-        with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
-        with c2: 
-            st.write(f"**💰 참가비:** {current_game['참가비']}")
-            if is_expired: st.error(f"**⏰ 마감:** {deadline_str} (종료)")
-            else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
+    st.header("📋 이번 주 라인업")
+    
+    # [중요] 저장된 최신 라인업 데이터 로드
+    data_final = load_applicants()
+    
+    if not data_final: 
+        st.info("확정 전")
+    else:
+        df_final = pd.DataFrame(data_final)
+        
+        # 이름 마스킹 (공개용)
+        if '이름' in df_final.columns:
+            df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
+        
         st.divider()
 
-        if st.session_state['reg_success']:
-            msg_name = st.session_state['reg_name']
-            if st.session_state['reg_is_late']:
-                st.success(f"✅ {msg_name}님, **대기(추가) 명단**에 등록되었습니다!")
-                st.markdown("""📢 **잠깐! 아직 확정이 아닙니다.**\n마감 후 신청이므로, 아래 버튼을 눌러 운영진에게 **승인 요청**을 해주세요.""")
-                st.link_button("💬 운영진에게 승인 요청하기 (오픈채팅)", "https://open.kakao.com/o/gf1s6t9h", use_container_width=True)
-            else:
-                st.success(f"✅ {msg_name}님 신청 완료!")
-            
-            if st.button("확인 (메시지 닫기)"):
-                st.session_state['reg_success'] = False
-                st.rerun()
-            st.divider()
-
-        if is_expired:
-            st.warning("⚠️ **정규 신청이 마감되었습니다.** 현재는 **'대기/추가'** 등록만 가능합니다.")
-        
-        st.write("### 👇 참가 신청서")
-        with st.form("apply_form"):
-            c1, c2 = st.columns(2)
-            with c1: name = st.text_input("이름")
-            with c2: phone = st.text_input("연락처", placeholder="01012345678")
-            
-            with st.expander("ℹ️ 레벨 기준 보기 (클릭)", expanded=False):
-                st.markdown("- **입문**: 기본기 부족\n- **초급**: 경험 적음\n- **중급**: 전국대회 가능\n- **상급**: 전국대회 상위\n- **최상급**: 선출 준함")
-            
-            is_vega = st.checkbox("순천VEGA 회원 (우선권)")
-            
-            st.markdown("---")
-            st.write("**⏱️ 참가 가능 시간(세트) 선택**")
-            set_options = ["1·2세트 (19:20 ~ 20:00)", "3·4세트 (20:00 ~ 20:40)", "5·6세트 (20:40 ~ 21:20)"]
-            selected_sets = st.multiselect("참가할 세트를 모두 선택해주세요 (예상 시간)", options=set_options, default=set_options)
-            
-            lc1, lc2 = st.columns(2)
-            with lc1: level = st.selectbox("참가자 레벨", LEVELS)
-            
-            st.markdown("---")
-            if not is_expired: st.info("📢 **주의:** 1순위 포지션 경쟁이 치열할 경우(7명 이상), **점수 및 밸런스**에 따라 2·3순위로 밀리거나 임의 배정될 수 있습니다.")
-            
-            p1, p2, p3 = st.columns(3)
-            with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
-            with p2: pos2 = st.selectbox("2순위 (선택)", ["선택 안함"] + POSITIONS_ALL)
-            with p3: pos3 = st.selectbox("3순위 (수비/속공)", ["선택 안함"] + POSITIONS_3RD)
-            
-            submit_label = "대기/추가 등록하기 (마감됨)" if is_expired else "신청하기"
-            
-            if st.form_submit_button(submit_label):
-                if name and phone:
-                    if not selected_sets: st.error("❌ 최소 1개 이상의 세트를 선택해야 합니다.")
-                    else:
-                        is_black, reason = check_blacklist(name, phone)
-                        if is_black: st.error(f"🚨 신청 불가: 블랙리스트 ({reason})")
-                        else:
-                            final_name = f"[VEGA] {name}" if is_vega else name
-                            simple_sets = [s.split("세트")[0] for s in selected_sets]
-                            note_value = ", ".join(simple_sets)
-                            try:
-                                add_applicant(final_name, phone, level, pos1, "" if pos2=="선택 안함" else pos2, "" if pos3=="선택 안함" else pos3, note_value)
-                                st.session_state['reg_success'] = True
-                                st.session_state['reg_name'] = name
-                                st.session_state['reg_is_late'] = is_expired
-                                st.toast(f"✅ {name}님 등록이 완료되었습니다!", icon="🎉")
-                                st.rerun()
-                            except Exception as e: st.error(f"❌ 저장 중 오류: {str(e)}")
-                else: st.error("필수 입력 누락"); st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
-        
-        with st.expander("🗑️ 신청 취소"):
-            with st.form("cancel"):
-                cc1, cc2 = st.columns(2)
-                with cc1: c_name = st.text_input("이름")
-                with cc2: c_phone = st.text_input("연락처")
-                if st.form_submit_button("취소하기"):
-                    # [NEW] 마감 후 취소 시 관리자 알림(소리함) 전송
-                    if is_expired:
-                        save_suggestion(f"🚨 [마감후취소] {c_name}님이 참가를 취소했습니다. (연락처: {c_phone})")
+        lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
+        for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3")], 1):
+            with lineup_tabs[i-1]:
+                # 컬럼이 존재하는지 확인 (에러 방지)
+                if col_pos in df_final.columns and col_team in df_final.columns:
+                    # 해당 세트에 배정된 인원만 필터링 (빈칸 제외)
+                    playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
                     
-                    suc, msg = cancel_applicant(c_name, c_phone)
-                    if not suc: suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
-                    
-                    if suc: 
-                        st.success(msg)
-                        st.toast("🗑️ 취소되었습니다.")
-                        if is_expired: st.warning("마감 후 취소 사실이 운영진에게 전달되었습니다.")
-                        time.sleep(1.5)
-                        st.rerun()
-                    else: st.error(msg)
+                    if not playing.empty:
+                        # 대기가 아닌 실제 플레이어
+                        real_players = playing[playing[col_pos] != "대기"]
+                        
+                        if not real_players.empty:
+                            # 팀별 데이터 분리
+                            team_a_df = real_players[real_players[col_team]=="A팀"]
+                            team_b_df = real_players[real_players[col_team]=="B팀"]
+                            
+                            count_a = len(team_a_df)
+                            count_b = len(team_b_df)
+                            
+                            # [제외 포지션 계산] 팀별로 없는 포지션 찾기
+                            def get_missing_pos(df_team, pos_col):
+                                if df_team.empty: return []
+                                current_pos = set(df_team[pos_col].unique())
+                                full_set = set(POSITIONS_ALL) 
+                                missing = list(full_set - current_pos)
+                                sort_order = {p: idx for idx, p in enumerate(POSITIONS_ALL)}
+                                missing.sort(key=lambda x: sort_order.get(x, 99))
+                                return missing
 
-        st.divider()
-        st.subheader("📊 실시간 참가 신청 현황")
-        applicants = load_applicants()
-        
-        if applicants:
-            df_public = pd.DataFrame(applicants)
-            st.markdown("##### 🚦 포지션 경쟁률 (정원: 6명)")
-            if '1순위' in df_public.columns:
-                pos_counts = df_public['1순위'].value_counts()
-                html_code = """<style>.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}.pos-status {font-size: 0.75em; font-weight: bold;}.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} </style><div class="pos-container">"""
-                for pos in POSITIONS_ALL:
-                    count = pos_counts.get(pos, 0)
-                    if count >= 7: status_class, status_text = "status-full", "초과"
-                    elif count == 6: status_class, status_text = "status-max", "마감"
-                    elif count == 5: status_class, status_text = "status-warn", "임박"
-                    else: status_class, status_text = "status-safe", "여유"
-                    html_code += f"""<div class="pos-card"><div class="pos-title">{pos}</div><div class="pos-count" style="color:#333;">{count}<span style="font-size:0.5em; font-weight:normal; color:#888;">명</span></div><div class="pos-status"><span class="{status_class}">{status_text}</span></div></div>"""
-                html_code += "</div>"
-                st.markdown(html_code, unsafe_allow_html=True)
-            
-            st.divider()
-            col_list, col_stats = st.columns([2.2, 1])
-            with col_list:
-                st.markdown("##### 📋 신청자 명단")
-                if '입금' not in df_public.columns: df_public['입금'] = "X"
-                df_public['상태'] = df_public['입금'].apply(lambda x: "✅ 확인" if str(x).strip().upper() == "O" else "-")
-                if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
-                if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
-                if '비고' not in df_public.columns: df_public['비고'] = ""
-                show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
-                real_cols = [c for c in show_cols if c in df_public.columns]
-                st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
+                            missing_a = get_missing_pos(team_a_df, col_pos)
+                            missing_b = get_missing_pos(team_b_df, col_pos)
+                            
+                            missing_text_a = ", ".join(missing_a) if missing_a else "없음"
+                            missing_text_b = ", ".join(missing_b) if missing_b else "없음"
 
-            with col_stats:
-                st.markdown("##### 🍰 레벨 분포")
-                if '레벨' in df_public.columns:
-                    level_counts = df_public['레벨'].value_counts()
-                    chart_data = []
-                    for lv in LEVELS: 
-                        cnt = level_counts.get(lv, 0)
-                        legend_label = f"{lv} ({cnt}명)"
-                        chart_text = f"{lv} {cnt}명" if cnt > 0 else ""
-                        chart_data.append({"Level": lv, "Count": cnt, "LegendLabel": legend_label, "ChartText": chart_text})
-                    df_chart = pd.DataFrame(chart_data)
-                    base = alt.Chart(df_chart).encode(theta=alt.Theta("Count", stack=True))
-                    pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(color=alt.Color("LegendLabel", title="레벨 현황", sort=None), tooltip=["Level", "Count"])
-                    text = base.mark_text(radius=60).encode(text=alt.Text("ChartText"), order=alt.Order("Level"), color=alt.value("black"))
-                    st.altair_chart(pie + text, use_container_width=True)
+                            # 안내 메시지
+                            info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
+                            if count_a != count_b:
+                                info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                            else:
+                                if missing_text_a == missing_text_b:
+                                    info_msg += f" (공통 제외: {missing_text_a})"
+                                else:
+                                    info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                    
+                            st.info(info_msg)
 
-                st.markdown("##### 📌 요약 정보")
-                with st.container(border=True):
-                    total_cnt = len(df_public)
-                    vega_cnt = len([n for n in df_public['이름'] if "[VEGA]" in str(n)])
-                    pickup_cnt = total_cnt - vega_cnt
-                    if not is_expired:
-                        diff = deadline_dt - now
-                        hours = diff.seconds // 3600 + (diff.days * 24)
-                        mins = (diff.seconds % 3600) // 60
-                        time_msg = f"{hours}시간 {mins}분 전"
-                        time_color = "blue"
-                    else: time_msg = "마감됨"; time_color = "red"
-                    st.markdown(f"""- **총 인원**: **{total_cnt}명**\n- <span style='color:green'>VEGA {vega_cnt}명</span> / <span style='color:blue'>픽업 {pickup_cnt}명</span>\n- **마감까지**: <span style='color:{time_color}; font-weight:bold;'>{time_msg}</span>""", unsafe_allow_html=True)
-        else: st.info("아직 신청자가 없습니다.")
-    else: st.warning("모집 중인 게임이 없습니다.")
+                        # [우선순위 배지 생성 함수]
+                        def get_priority_badge(row, pos_col):
+                            current = str(row[pos_col]).strip()
+                            w1 = str(row.get('1순위', '')).strip()
+                            w2 = str(row.get('2순위', '')).strip()
+                            w3 = str(row.get('3순위', '')).strip()
+                            
+                            if current == w1: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
+                            elif current == w2: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
+                            elif current == w3: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
+                            else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.error(f"🔴 A팀 (VEGA)")
+                            for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
+                                badge = get_priority_badge(r, col_pos)
+                                st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                        with c2:
+                            st.info(f"🔵 B팀 (픽업)")
+                            for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
+                                badge = get_priority_badge(r, col_pos)
+                                st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                        
+                        st.markdown("---")
+                        bench = playing[playing[col_pos]=="대기"]
+                        if not bench.empty:
+                            st.caption(f"🛌 **대기**")
+                            for _, r in bench.iterrows(): 
+                                st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
+                else:
+                    st.warning("아직 배정 정보가 없습니다.")
 
 # --- 탭 2: 라인업 공개 ---
 with tab2:
