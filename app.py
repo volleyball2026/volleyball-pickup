@@ -19,6 +19,7 @@ SHEET_BLACKLIST = "블랙리스트"
 SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
 ADMIN_PASSWORD = "1992"
+SHEET_VIDEOS = "영상관리"  # [NEW] 유튜브 링크 저장용 시트
 
 # --- [업데이트 로그 데이터] ---
 UPDATE_LOGS = {
@@ -240,6 +241,24 @@ def get_my_history(name, phone):
         except:
             pass
     return history
+
+# --- [NEW] 영상 관련 함수 추가 (코드 상단 함수 정의 부분에 추가) ---
+def save_video_link(url, title):
+    sheet = get_sheet_instance(SHEET_VIDEOS)
+    if sheet:
+        # 날짜, 제목, 링크 저장
+        sheet.append_row([datetime.now().strftime("%Y-%m-%d"), title, url])
+        st.cache_data.clear()
+
+@st.cache_data(ttl=60)
+def get_latest_video():
+    sheet = get_sheet_instance(SHEET_VIDEOS)
+    if sheet:
+        try:
+            data = sheet.get_all_records()
+            if data: return data[-1] # 가장 최근 등록한 영상 반환
+        except: return None
+    return None
 
 # --- [기록 조회용 함수 추가] ---
 @st.cache_data(ttl=60)
@@ -564,8 +583,10 @@ with st.sidebar:
 st.title("🏐 여순광 배구 픽업게임 매니저")
 current_game = get_current_game_info()
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "🔰 운영 안내", "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
+# [수정] 탭 목록에 '경기 영상' 추가
+tab0, tab1, tab2, tab3, tab4, tab8, tab5, tab6, tab7 = st.tabs([
+    "🔰 운영 안내", "📢 참가 신청", "📋 라인업 공개", "📊 My Page", "🏆 MVP", 
+    "📺 경기 영상", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
 # --- 탭 0: 운영 안내 ---
