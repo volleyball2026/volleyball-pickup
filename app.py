@@ -1117,13 +1117,39 @@ with tab4:
         st.write("🔒 개인정보 보호를 위해 참가자 본인 인증 후 투표 및 결과 확인이 가능합니다.")
 
     st.header("🏆 MVP 투표")
-    apps = load_applicants()
     
+    # 1. 현재 신청자 로드
+    apps = load_applicants()
+    is_archived_mode = False # 종료된 게임 모드인지 여부
+
+    # 2. [핵심 수정] 신청자가 없으면(게임 종료됨), 과거 기록에서 '가장 최근 게임' 멤버를 불러옴
     if not apps:
-        st.warning("참가자 명단이 없어 투표할 수 없습니다.")
+        all_history = load_all_history()
+        if all_history:
+            # 가장 마지막에 저장된(최신) 날짜 가져오기
+            last_date = all_history[-1].get('일시')
+            
+            # 해당 날짜의 참가자만 필터링 + 중복 제거 (이름/연락처 기준)
+            temp_players = {}
+            for h in all_history:
+                if h.get('일시') == last_date:
+                    key = (h.get('이름'), h.get('연락처'))
+                    if key not in temp_players:
+                        temp_players[key] = h
+            
+            if temp_players:
+                apps = list(temp_players.values())
+                is_archived_mode = True
+                
+                # 안내 메시지
+                st.info(f"📢 현재 진행 중인 게임이 없어, **최근 종료된 게임 ({last_date})** 명단으로 투표를 진행합니다.")
+
+    if not apps:
+        st.warning("투표할 참가자 명단이 없습니다. (기록된 게임 없음)")
     else:
         auth_placeholder = st.empty()
         
+        # 인증 전 화면
         if not st.session_state['mvp_voter_verified']:
             with auth_placeholder.form("mvp_auth"):
                 st.info("🔒 투표 및 결과 확인을 위해 본인 인증이 필요합니다.")
@@ -1132,8 +1158,11 @@ with tab4:
                 if st.form_submit_button("확인"):
                     clean_vphone = normalize_phone(vphone)
                     found = False
+                    
+                    # 명단(apps)에서 본인 확인
                     for p in apps:
-                        p_name_real = p['이름'].replace("[VEGA] ", "")
+                        # [VEGA] 태그 처리
+                        p_name_real = p['이름'].replace("[VEGA] ", "").strip()
                         if p_name_real == voter and normalize_phone(p['연락처']) == clean_vphone:
                             found = True
                             break
@@ -1143,29 +1172,34 @@ with tab4:
                         st.session_state['mvp_voter_name'] = voter
                         st.session_state['mvp_voter_phone'] = clean_vphone
                         auth_placeholder.empty()
+                        st.rerun()
                     else:
-                        st.error("참가자 명단에 없는 정보입니다.")
+                        st.error("명단에 없는 정보입니다. (이름과 연락처를 확인해주세요)")
             
             if not st.session_state['mvp_voter_verified']:
                 st.divider()
                 st.caption("🚫 **비참가자는 투표 현황 및 명예의 전당을 볼 수 없습니다.**")
 
+        # 인증 후 화면
         if st.session_state['mvp_voter_verified']:
             st.success(f"👋 환영합니다, {st.session_state['mvp_voter_name']}님!")
             
-            df_mvp = pd.DataFrame(apps)
-            candidate_list = df_mvp['이름'].tolist()
-            
+            # 투표 양식
             with st.form("mvp_submit"):
-                target_name = st.selectbox("🏅 MVP 선택 (실명 표시)", candidate_list)
+                # 본인을 제외한 후보 리스트 생성 (선택 사항, 여기선 전체 표시)
+                candidate_list = [p['이름'] for p in apps]
+                target_name = st.selectbox("🏅 MVP 선택 (오늘 가장 빛난 선수)", candidate_list)
+                
                 if st.form_submit_button("투표하기"):
                     suc, msg = save_mvp_vote(
                         st.session_state['mvp_voter_name'], 
                         st.session_state['mvp_voter_phone'], 
                         target_name
                     )
-                    if suc: st.success(msg)
-                    else: st.error(msg)
+                    if suc: 
+                        st.success(msg)
+                    else: 
+                        st.error(msg)
             
             if st.button("로그아웃"):
                 st.session_state['mvp_voter_verified'] = False
@@ -1174,7 +1208,12 @@ with tab4:
             st.divider()
             st.subheader("📊 실시간 득표 현황 (Top 5)")
             rank = get_mvp_ranking_today()
+            
             if not rank.empty: 
+                # 1등 강조
+                top1 = rank.iloc[0]
+                if top1['득표수'] > 0:
+                    st.markdown(f"🥇 **현재 1위: {top1['이름']} ({top1['득표수']}표)**")
                 st.dataframe(rank.head(5), hide_index=True, use_container_width=True)
             else: 
                 st.info("아직 투표가 없습니다.")
@@ -1182,9 +1221,10 @@ with tab4:
             st.markdown("---")
             st.subheader("👑 명예의 전당")
             hof = get_mvp_hall_of_fame()
-            if len(hof)>0: 
-                hof['날짜'] = hof['일시']; hof['MVP'] = hof['MVP후보']
-                st.dataframe(hof[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
+            if len(hof) > 0: 
+                # 보기 좋게 컬럼 정리
+                hof_display = hof.rename(columns={'일시': '날짜', 'MVP후보': 'MVP'})
+                st.dataframe(hof_display[['날짜', 'MVP', '득표수']], hide_index=True, use_container_width=True)
 
 # --- 탭 5: 소리함 ---
 with tab5:
