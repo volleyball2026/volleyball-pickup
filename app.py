@@ -110,22 +110,48 @@ def simplify_level_name(level_full):
     return level_full.split(" ")[0]
 
 # --- [기능 함수] ---
+# --- [함수 수정/추가] ---
+
 def save_game_info(info_dict):
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
+        # [수정] 맨 뒤에 'X' (비공개 기본값) 추가 (총 10번째 컬럼)
         sheet.append_row([
             info_dict['제목'], info_dict['일시'], info_dict['장소'], 
             info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
-            info_dict['설명'], info_dict['연락처'], info_dict['마감일시']
+            info_dict['설명'], info_dict['연락처'], info_dict['마감일시'],
+            "X" # 기본은 비공개
         ])
         st.cache_data.clear()
 
-@st.cache_data(ttl=10)
+def toggle_game_visibility(is_visible):
+    sheet = get_sheet_instance(SHEET_GAME_INFO)
+    if sheet:
+        try:
+            # 가장 최근 게임(마지막 행)의 10번째 컬럼(공개여부)을 수정
+            data = sheet.get_all_values()
+            if len(data) > 1: # 헤더 제외 데이터가 있을 때
+                last_row_idx = len(data) # 1-based index for gspread
+                val = "O" if is_visible else "X"
+                sheet.update_cell(last_row_idx, 10, val)
+                st.cache_data.clear()
+                return True
+        except Exception as e:
+            return False
+    return False
+
+@st.cache_data(ttl=5) # 갱신 확인을 위해 ttl 단축
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
         all_games = sheet.get_all_records()
-        if all_games: return all_games[-1]
+        if all_games: 
+            game = all_games[-1]
+            # 공개여부 컬럼이 없으면(옛날 데이터) 기본 'O'로 처리
+            if '공개여부' not in game and len(game) < 10:
+                game['공개여부'] = 'O' 
+            # 딕셔너리 키로 접근할 때 안전장치
+            return game
     return None
 
 def archive_current_game():
@@ -865,121 +891,129 @@ with tab1:
             
 # --- 탭 2: 라인업 공개 ---
 with tab2:
-    # 1. 게임 종료(CLOSED) 또는 정보 없음 확인
+    # 1. 게임 종료 체크
     if not current_game or current_game.get('제목') == 'CLOSED':
         st.header("📋 이번 주 라인업")
-        st.divider()
         st.info("💤 **현재 진행 중인 게임이 없습니다.**")
         st.write("새로운 게임이 개설되고 팀 배정이 완료되면 이곳에 라인업이 공개됩니다.")
-        st.caption("지난 경기 결과는 'My Page'나 'MVP' 탭에서 확인하실 수 있습니다.")
-        
+    
     else:
-        # 2. 게임 진행 중 (정상적인 라인업 화면)
-        with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
-            st.markdown("""
-            **1. 배정 기준 (우선순위 점수제)**
-            | 항목 | 점수 | 설명 |
-            | :--- | :--- | :--- |
-            | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
-            | **VEGA 회원** | `+100점` | **우선권 부여** |
-            | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
-            | **기여도** | `+3~10점` | **대기/비선호 포지션** 수행 시 점수 적립 (이번 게임 내 누적) |
-
-            **2. 화면 보는 법**
-            - **팀 확인**: A팀(🔴) / B팀(🔵)
-            - **아이콘**: 
-                - <span style='color:#1565C0; background-color:#E3F2FD; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span> : 1순위 희망 포지션 배정
-                - <span style='color:#2E7D32; background-color:#E8F5E9; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span> : 2순위 희망 포지션 배정
-                - <span style='color:#E65100; background-color:#FFF3E0; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span> : 3순위 희망 포지션 배정
-                - <span style='color:#C62828; background-color:#FFEBEE; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span> : 무작위(임의) 배정
-            """, unsafe_allow_html=True)
-
-        st.header("📋 이번 주 라인업")
+        # [NEW] 2. 공개 여부 체크 (관리자만 무시하고 볼 수 있게 할 수도 있지만, 헷갈리니 일단 모두 숨김)
+        # 단, 관리자 탭에서 미리보기 가능하므로 여기선 철저히 숨김
+        is_visible = str(current_game.get('공개여부', 'X')).upper().strip() == 'O'
         
-        data_final = load_applicants()
-        
-        if not data_final: 
-            st.info("⏳ **아직 라인업이 확정되지 않았습니다.** (모집 중)")
-        else:
-            df_final = pd.DataFrame(data_final)
-            
-            # 데이터 중복 제거
-            if '이름' in df_final.columns and '연락처' in df_final.columns:
-                df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
-
-            # 이름 마스킹
-            if '이름' in df_final.columns:
-                df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
-            
+        if not is_visible:
+            st.header("📋 이번 주 라인업")
             st.divider()
+            st.warning("🔒 **운영진이 라인업을 최종 점검 중입니다.**")
+            st.markdown("""
+            ### ⏳ 잠시만 기다려주세요!
+            - 현재 신청 마감 후 **팀 밸런스 조정 및 검토**를 진행하고 있습니다.
+            - 검토가 완료되면 이곳에 라인업이 공개됩니다.
+            - 알림이 울리면 다시 확인해주세요! 🔔
+            """)
+            st.markdown("<div style='text-align: center; font-size: 80px; margin-top: 20px;'>🕵️‍♂️</div>", unsafe_allow_html=True)
+            
+        else:
+            # === 3. 정상 공개 화면 (기존 코드) ===
+            with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
+                st.markdown("""
+                **1. 배정 기준 (우선순위 점수제)**
+                | 항목 | 점수 | 설명 |
+                | :--- | :--- | :--- |
+                | **기본 점수** | `50점` | 모든 참가자 기본 지급 |
+                | **VEGA 회원** | `+100점` | **우선권 부여** |
+                | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
+                | **기여도** | `+3~10점` | **대기/비선호 포지션** 수행 시 점수 적립 |
 
-            lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
-            for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3")], 1):
-                with lineup_tabs[i-1]:
-                    if col_pos in df_final.columns and col_team in df_final.columns:
-                        playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
-                        
-                        if not playing.empty:
-                            real_players = playing[playing[col_pos] != "대기"]
-                            if not real_players.empty:
-                                team_a_df = real_players[real_players[col_team]=="A팀"]
-                                team_b_df = real_players[real_players[col_team]=="B팀"]
-                                count_a = len(team_a_df)
-                                count_b = len(team_b_df)
-                                
-                                def get_missing_pos(df_team, pos_col):
-                                    if df_team.empty: return []
-                                    current_pos = set(df_team[pos_col].unique())
-                                    full_set = set(POSITIONS_ALL) 
-                                    missing = list(full_set - current_pos)
-                                    sort_order = {p: idx for idx, p in enumerate(POSITIONS_ALL)}
-                                    missing.sort(key=lambda x: sort_order.get(x, 99))
-                                    return missing
+                **2. 화면 보는 법**
+                - **팀 확인**: A팀(🔴) / B팀(🔵)
+                - **아이콘**: 
+                    - <span style='color:#1565C0; background-color:#E3F2FD; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span> : 1순위 희망 포지션 배정
+                    - <span style='color:#2E7D32; background-color:#E8F5E9; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span> : 2순위 희망 포지션 배정
+                    - <span style='color:#E65100; background-color:#FFF3E0; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span> : 3순위 희망 포지션 배정
+                    - <span style='color:#C62828; background-color:#FFEBEE; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span> : 무작위(임의) 배정
+                """, unsafe_allow_html=True)
 
-                                missing_a = get_missing_pos(team_a_df, col_pos)
-                                missing_b = get_missing_pos(team_b_df, col_pos)
-                                missing_text_a = ", ".join(missing_a) if missing_a else "없음"
-                                missing_text_b = ", ".join(missing_b) if missing_b else "없음"
+            st.header("📋 이번 주 라인업")
+            
+            data_final = load_applicants()
+            
+            if not data_final: 
+                st.info("확정 전")
+            else:
+                df_final = pd.DataFrame(data_final)
+                if '이름' in df_final.columns and '연락처' in df_final.columns:
+                    df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
+                if '이름' in df_final.columns:
+                    df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
+                
+                st.divider()
 
-                                info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
-                                if count_a != count_b:
-                                    info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
-                                else:
-                                    if missing_text_a == missing_text_b:
-                                        info_msg += f" (공통 제외: {missing_text_a})"
-                                    else:
-                                        info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
-                                st.info(info_msg)
-
-                            def get_priority_badge(row, pos_col):
-                                current = str(row[pos_col]).strip()
-                                w1 = str(row.get('1순위', '')).strip()
-                                w2 = str(row.get('2순위', '')).strip()
-                                w3 = str(row.get('3순위', '')).strip()
-                                if current == w1: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
-                                elif current == w2: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
-                                elif current == w3: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
-                                else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
-
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.error(f"🔴 A팀 (VEGA)")
-                                for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
-                                    badge = get_priority_badge(r, col_pos)
-                                    st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
-                            with c2:
-                                st.info(f"🔵 B팀 (픽업)")
-                                for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
-                                    badge = get_priority_badge(r, col_pos)
-                                    st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
+                for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3")], 1):
+                    with lineup_tabs[i-1]:
+                        if col_pos in df_final.columns and col_team in df_final.columns:
+                            playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
                             
-                            st.markdown("---")
-                            bench = playing[playing[col_pos]=="대기"]
-                            if not bench.empty:
-                                st.caption(f"🛌 **대기**")
-                                for _, r in bench.iterrows(): st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
-                    else:
-                        st.warning("아직 배정 정보가 없습니다.")
+                            if not playing.empty:
+                                real_players = playing[playing[col_pos] != "대기"]
+                                if not real_players.empty:
+                                    team_a_df = real_players[real_players[col_team]=="A팀"]
+                                    team_b_df = real_players[real_players[col_team]=="B팀"]
+                                    count_a = len(team_a_df); count_b = len(team_b_df)
+                                    
+                                    # 제외 포지션 계산
+                                    def get_missing_pos(df_team, pos_col):
+                                        if df_team.empty: return []
+                                        current_pos = set(df_team[pos_col].unique())
+                                        full_set = set(POSITIONS_ALL) 
+                                        missing = list(full_set - current_pos)
+                                        sort_order = {p: idx for idx, p in enumerate(POSITIONS_ALL)}
+                                        missing.sort(key=lambda x: sort_order.get(x, 99))
+                                        return missing
+
+                                    missing_a = get_missing_pos(team_a_df, col_pos)
+                                    missing_b = get_missing_pos(team_b_df, col_pos)
+                                    missing_text_a = ", ".join(missing_a) if missing_a else "없음"
+                                    missing_text_b = ", ".join(missing_b) if missing_b else "없음"
+
+                                    info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
+                                    if count_a != count_b: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                    else:
+                                        if missing_text_a == missing_text_b: info_msg += f" (공통 제외: {missing_text_a})"
+                                        else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                    st.info(info_msg)
+
+                                def get_priority_badge(row, pos_col):
+                                    current = str(row[pos_col]).strip()
+                                    w1 = str(row.get('1순위', '')).strip()
+                                    w2 = str(row.get('2순위', '')).strip()
+                                    w3 = str(row.get('3순위', '')).strip()
+                                    if current == w1: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
+                                    elif current == w2: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
+                                    elif current == w3: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
+                                    else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
+
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.error(f"🔴 A팀 (VEGA)")
+                                    for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
+                                        badge = get_priority_badge(r, col_pos)
+                                        st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                                with c2:
+                                    st.info(f"🔵 B팀 (픽업)")
+                                    for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
+                                        badge = get_priority_badge(r, col_pos)
+                                        st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                                
+                                st.markdown("---")
+                                bench = playing[playing[col_pos]=="대기"]
+                                if not bench.empty:
+                                    st.caption(f"🛌 **대기**")
+                                    for _, r in bench.iterrows(): st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
+                        else:
+                            st.warning("아직 배정 정보가 없습니다.")
 # --- 탭 3: My Page ---
 with tab3:
     with st.expander("📘 이용 가이드: 내 정보 확인", expanded=False):
@@ -1493,8 +1527,38 @@ with tab7:
                 else: st.error("비밀번호 불일치")
     
     if st.session_state['admin_logged_in']:
+        # [NEW] 라인업 공개 스위치 (가장 위에 배치)
+        st.subheader("📢 라인업 공개 설정")
+        if current_game:
+            # 현재 상태 확인 (O: 공개, X: 비공개)
+            is_visible_now = str(current_game.get('공개여부', 'X')).upper().strip() == 'O'
+            
+            col_tog, col_stat = st.columns([1, 3])
+            with col_tog:
+                # 토글 스위치
+                toggle_val = st.toggle("라인업 공개하기", value=is_visible_now)
+            
+            with col_stat:
+                if toggle_val:
+                    st.success("🟢 **현재 상태: 공개 중** (회원들이 볼 수 있습니다)")
+                else:
+                    st.error("🔒 **현재 상태: 비공개** (운영진만 확인/수정 가능)")
+
+            # 상태가 변경되었을 때만 업데이트 실행
+            if toggle_val != is_visible_now:
+                if toggle_game_visibility(toggle_val):
+                    st.toast("상태가 변경되었습니다!", icon="✅")
+                    time.sleep(0.5)
+                    st.rerun()
+        else:
+            st.warning("진행 중인 게임이 없습니다.")
+        
+        st.divider()
+
+        # ... (이하 '참가 확인 관리' 코드 등 기존 코드 그대로 유지) ...
         st.subheader("✅ 참가 확인 및 대기자 관리")
         apps = load_applicants()
+        # ... (기존 코드 계속) ...
         if apps:
             df_manage = pd.DataFrame(apps)
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
