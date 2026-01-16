@@ -652,7 +652,7 @@ with tab0:
 
 # --- 탭 1: 참가 신청 ---
 with tab1:
-    # 1. 게임 종료(CLOSED) 또는 정보 없음 확인
+    # 1. 게임 종료(CLOSED) 또는 정보 없음
     if not current_game or current_game.get('제목') == 'CLOSED':
         st.info("💤 **현재 모집 중인 게임이 없습니다.**")
         st.markdown("""
@@ -663,10 +663,10 @@ with tab1:
         st.markdown("<div style='text-align: center; font-size: 60px; margin-top: 30px;'>🏐</div>", unsafe_allow_html=True)
         
     else:
-        # 2. 게임 진행 중
+        # 2. 정상 모집 중
         if 'reg_success' not in st.session_state: st.session_state['reg_success'] = False
         if 'reg_name' not in st.session_state: st.session_state['reg_name'] = ""
-        if 'reg_type' not in st.session_state: st.session_state['reg_type'] = "normal" # [NEW] 등록 타입 (normal/waiting)
+        if 'reg_type' not in st.session_state: st.session_state['reg_type'] = "normal" 
 
         deadline_str = str(current_game.get('마감일시', '2099-12-31 23:59'))
         try: deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
@@ -674,37 +674,33 @@ with tab1:
         now = datetime.utcnow() + timedelta(hours=9)
         is_expired = now > deadline_dt
 
-        # [핵심] 현재 신청 인원 체크
+        # 현재 신청 인원 체크
         applicants = load_applicants()
         current_count = len(applicants)
         is_full = current_count >= MAX_CAPACITY
 
         st.subheader(f"[{current_game['성별']}] {current_game['제목']}")
         
-        # 상단 정보 표시
         c1, c2 = st.columns(2)
         with c1: st.write(f"**📅 일시:** {current_game['일시']}"); st.write(f"**📍 장소:** {current_game['장소']}")
         with c2: 
             st.write(f"**💰 참가비:** {current_game['참가비']}")
-            # 마감 여부 표시
             if is_expired: 
-                st.error(f"**⏰ 마감:** {deadline_str} (시간 종료)")
+                st.error(f"**⏰ 마감:** {deadline_str} (종료)")
             elif is_full:
-                st.error(f"**🚫 정원 초과:** {current_count}/{MAX_CAPACITY}명 (예비 등록만 가능)")
+                st.warning(f"**🚫 정원 도달:** {current_count}/{MAX_CAPACITY}명 (VEGA 회원은 신청 가능)")
             else: 
                 st.info(f"**⏰ 마감:** {deadline_str} 까지")
 
-        # [NEW] 정원 게이지 바
         st.markdown(f"**👥 모집 현황 ({current_count}/{MAX_CAPACITY}명)**")
         progress_val = min(current_count / MAX_CAPACITY, 1.0)
-        pg_color = "red" if is_full else "green"
         st.progress(progress_val)
+        
         if is_full:
-            st.warning(f"📢 **정원({MAX_CAPACITY}명)이 마감되었습니다.**\n지금 신청하시면 **'예비 대기자 (순번 {current_count + 1}번)'**로 등록됩니다.\n결원 발생 시 운영진이 순서대로 연락드립니다.")
+            st.warning(f"📢 **일반 정원({MAX_CAPACITY}명)이 마감되었습니다.**\n- **픽업(게스트)**: 지금 신청 시 **'예비 대기자'**로 등록됩니다.\n- **VEGA 회원**: 정원과 무관하게 **'확정'** 등록됩니다.")
 
         st.divider()
 
-        # 등록 완료 메시지 처리
         if st.session_state['reg_success']:
             msg_name = st.session_state['reg_name']
             r_type = st.session_state.get('reg_type', 'normal')
@@ -723,7 +719,6 @@ with tab1:
                 st.rerun()
             st.divider()
         
-        # 신청서 폼
         st.write("### 👇 참가 신청서")
         with st.form("apply_form"):
             c1, c2 = st.columns(2)
@@ -751,8 +746,8 @@ with tab1:
             st.caption("부상이나 실력 문제로 **'절대 수행 불가능한'** 포지션이 있다면 선택해주세요. (최대 2개)")
             excluded_pos = st.multiselect("제외할 포지션 (선택)", POSITIONS_ALL, max_selections=2)
             
-            # 버튼 라벨 동적 변경
-            if is_full: submit_label = "예비 대기자로 등록하기"
+            # 버튼 라벨
+            if is_full: submit_label = "신청하기 (VEGA확정 / 픽업대기)"
             elif is_expired: submit_label = "시간 외 추가 등록하기"
             else: submit_label = "신청하기"
             
@@ -764,19 +759,23 @@ with tab1:
                         is_black, reason = check_blacklist(name, phone)
                         if is_black: st.error(f"🚨 신청 불가: {reason}")
                         else:
-                            final_name = f"[VEGA] {name}" if is_vega else name
-                            sets_str = ", ".join([s.split("세트")[0] for s in selected_sets])
-                            excluded_str = ", ".join(excluded_pos)
-                            
-                            # 비고란에 '예비' 표시 추가 (관리자 식별용)
-                            note_prefix = ""
+                            # [핵심] VEGA 회원은 정원 초과여도 Normal(확정) 처리
+                            # 픽업 회원은 정원 초과 시 Waiting(대기) 처리
                             reg_type = "normal"
-                            if is_full: 
-                                note_prefix = f"[예비{current_count+1}] "
-                                reg_type = "waiting"
+                            note_prefix = ""
+
+                            if is_full:
+                                if is_vega: 
+                                    reg_type = "normal" # VEGA 프리패스
+                                else:
+                                    reg_type = "waiting"
+                                    note_prefix = f"[예비{current_count+1}] "
                             elif is_expired:
                                 note_prefix = "[지각] "
 
+                            final_name = f"[VEGA] {name}" if is_vega else name
+                            sets_str = ", ".join([s.split("세트")[0] for s in selected_sets])
+                            excluded_str = ", ".join(excluded_pos)
                             final_note = note_prefix + sets_str
                             
                             try:
@@ -795,7 +794,6 @@ with tab1:
                             except Exception as e: st.error(f"❌ 저장 중 오류: {str(e)}")
                 else: st.error("필수 입력 누락"); st.toast("⚠️ 이름과 연락처를 입력해주세요!", icon="🚨")
         
-        # 취소 폼 (기존 유지)
         with st.expander("🗑️ 신청 취소"):
             with st.form("cancel"):
                 cc1, cc2 = st.columns(2)
@@ -808,17 +806,14 @@ with tab1:
                     if suc: st.success(msg); st.toast("🗑️ 취소되었습니다."); time.sleep(1.5); st.rerun() 
                     else: st.error(msg)
 
-        # 신청 현황판
+        # 현황판 (기존 유지 - 20명 기준으로 보여줌)
         st.divider()
         st.subheader("📊 실시간 참가 신청 현황")
-        
         if applicants:
             df_public = pd.DataFrame(applicants)
             st.markdown("##### 🚦 포지션 경쟁률 (정원 내)")
-            
-            # [수정] 정원 내 인원(상위 20명)만 통계에 반영
+            # 상위 20명만 포지션 경쟁률에 반영 (예비 인원은 경쟁률에서 제외)
             df_in_cap = df_public.iloc[:MAX_CAPACITY]
-            
             if '1순위' in df_in_cap.columns:
                 pos_counts = df_in_cap['1순위'].value_counts()
                 html_code = """<style>.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}.pos-status {font-size: 0.75em; font-weight: bold;}.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} </style><div class="pos-container">"""
@@ -839,27 +834,21 @@ with tab1:
                 if '이름' in df_public.columns: df_public['이름'] = df_public['이름'].apply(anonymize_name)
                 if '레벨' in df_public.columns: df_public['레벨'] = df_public['레벨'].apply(simplify_level_name) 
                 if '비고' not in df_public.columns: df_public['비고'] = ""
-                
-                # [NEW] 20등 이후는 '예비' 표시
-                # 비고란에 [예비N]이 이미 들어가 있지만, 시각적으로도 구분
                 show_cols = ["이름", "상태", "레벨", "1순위", "비고"]
                 real_cols = [c for c in show_cols if c in df_public.columns]
-                
                 st.dataframe(df_public[real_cols], hide_index=True, use_container_width=True, height=500)
 
             with col_stats:
                 st.markdown("##### 📌 요약 정보")
                 with st.container(border=True):
                     total_cnt = len(df_public)
-                    confirmed_cnt = min(total_cnt, MAX_CAPACITY)
-                    waiting_cnt = max(0, total_cnt - MAX_CAPACITY)
+                    # 요약: 20명이 넘더라도 VEGA는 확정으로 칠 수 있게 단순 집계
+                    vega_cnt = len([n for n in df_public['이름'] if "[VEGA]" in str(n)])
+                    pickup_cnt = total_cnt - vega_cnt
                     
                     st.write(f"- **총 신청**: {total_cnt}명")
-                    st.write(f"- **경기 확정권**: {confirmed_cnt}명")
-                    if waiting_cnt > 0:
-                        st.error(f"- **예비 대기**: {waiting_cnt}명")
-                    else:
-                        st.info(f"- **예비 대기**: 없음")
+                    st.write(f"- **VEGA**: {vega_cnt}명 (우선)")
+                    st.write(f"- **픽업**: {pickup_cnt}명")
 
                     if not is_expired and not is_full:
                         diff = deadline_dt - now
@@ -1499,7 +1488,7 @@ with tab7:
                     admin_auth.empty()
                 else: st.error("비밀번호 불일치")
     
-if st.session_state['admin_logged_in']:
+    if st.session_state['admin_logged_in']:
         st.subheader("✅ 참가 확인 및 대기자 관리")
         apps = load_applicants()
         if apps:
@@ -1508,12 +1497,22 @@ if st.session_state['admin_logged_in']:
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             cols_manage = ["이름", "연락처", "입금_bool", "1순위", "비고"]
             
-            # [NEW] 명단 분리 (정원 내 vs 예비)
-            df_confirmed = df_manage.iloc[:MAX_CAPACITY]
-            df_waiting = df_manage.iloc[MAX_CAPACITY:]
+            # [NEW] 명단 분리 로직 (VEGA 우선)
+            # 조건 1: 인덱스가 20 미만 (선착순)
+            # 조건 2: 이름에 [VEGA] 포함 (프리패스)
+            # 이 두 가지 중 하나라도 만족하면 '확정'
             
-            # 1. 경기 확정권 (1~20번)
-            st.success(f"📌 **경기 확정권 ({len(df_confirmed)}/{MAX_CAPACITY}명)** - 정상 진행")
+            # 인덱스 생성
+            df_manage = df_manage.reset_index(drop=True)
+            
+            # 확정 조건: (순번이 20등 안쪽) OR (VEGA 회원)
+            mask_confirmed = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]", regex=True))
+            
+            df_confirmed = df_manage[mask_confirmed]
+            df_waiting = df_manage[~mask_confirmed] # 확정 아닌 나머지는 대기
+            
+            # 1. 경기 확정권
+            st.success(f"📌 **경기 확정 명단 ({len(df_confirmed)}명)** - VEGA 포함")
             edited_confirmed = st.data_editor(
                 df_confirmed[cols_manage], 
                 column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, 
@@ -1521,11 +1520,11 @@ if st.session_state['admin_logged_in']:
                 key="editor_confirmed"
             )
             
-            # 2. 예비 대기자 (21번~)
+            # 2. 예비 대기자
             if not df_waiting.empty:
                 st.divider()
-                st.error(f"⏳ **예비 대기자 ({len(df_waiting)}명)** - 결원 발생 시 연락 필요")
-                st.caption("앞 번호 신청자가 취소하면, 예비 1번에게 연락하여 참석 여부를 물어보세요.")
+                st.error(f"⏳ **예비 대기자 ({len(df_waiting)}명)** - 픽업 회원")
+                st.caption("앞 번호 픽업 신청자가 취소하면, 예비 1번에게 연락하여 참석 여부를 물어보세요.")
                 edited_waiting = st.data_editor(
                     df_waiting[cols_manage], 
                     column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, 
@@ -1534,17 +1533,26 @@ if st.session_state['admin_logged_in']:
                 )
             
             if st.button("참가 현황 저장"):
-                # 두 데이터프레임 합치기
-                if not df_waiting.empty:
-                    df_combined = pd.concat([edited_confirmed, edited_waiting], ignore_index=True)
-                else:
-                    df_combined = edited_confirmed
+                # 변경된 내용 합쳐서 저장 (순서 유지)
+                # 원본 df_manage에 편집된 내용 반영
                 
-                # 전체 데이터프레임 업데이트 (인덱스 매칭)
-                # 주의: 편집된 컬럼만 업데이트하고 나머지는 원본 유지
-                for idx, row in df_combined.iterrows():
-                    df_manage.at[idx, '입금_bool'] = row['입금_bool']
-                    # 다른 컬럼도 수정 가능하게 하려면 여기에 추가
+                # 확정 명단 업데이트
+                for idx, row in edited_confirmed.iterrows():
+                    # 원래 인덱스를 찾아서 업데이트 (이름/연락처 기준 매칭이 안전하지만 여기선 간편하게)
+                    # data_editor는 인덱스를 보존하므로 loc 사용 가능
+                    org_idx = row.name # 편집 전 인덱스 (df_manage 기준이 아닐 수 있음, 주의)
+                    
+                    # 가장 안전한 방법: 이름/연락처로 매칭
+                    mask = (df_manage['이름'] == row['이름']) & (df_manage['연락처'] == row['연락처'])
+                    if mask.any():
+                        df_manage.loc[mask, '입금_bool'] = row['입금_bool']
+
+                # 대기 명단 업데이트
+                if not df_waiting.empty:
+                    for idx, row in edited_waiting.iterrows():
+                        mask = (df_manage['이름'] == row['이름']) & (df_manage['연락처'] == row['연락처'])
+                        if mask.any():
+                            df_manage.loc[mask, '입금_bool'] = row['입금_bool']
 
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                 update_lineup(df_manage)
@@ -1553,6 +1561,7 @@ if st.session_state['admin_logged_in']:
                 st.rerun()
         else: st.info("신청자 없음")
 
+        # ... (이하 연락처 복사, 게임 개설 등 기존 코드 유지) ...
         st.divider()
         with st.expander("📞 참가자 전체 연락처 복사 (단체문자)"):
             if apps:
@@ -1624,8 +1633,13 @@ if st.session_state['admin_logged_in']:
             with c3: b_reason = st.text_input("사유")
             if st.form_submit_button("등록"):
                 add_to_blacklist(b_name, b_phone, b_reason); st.success("등록됨")
-
-# --- 탭 7 내부 ---
+        
+        st.divider()
+        st.subheader("🗣️ 건의함")
+        suggestions = load_suggestions()
+        if suggestions: st.dataframe(suggestions, use_container_width=True)
+        else: st.info("건의 없음")
+        
         st.divider()
         st.subheader("🎬 유튜브 영상 등록")
         with st.form("video_upload"):
@@ -1635,39 +1649,23 @@ if st.session_state['admin_logged_in']:
             
             if st.form_submit_button("영상 게시하기"):
                 if v_title and v_url:
-                    # [수정] 복잡한 헤더 체크 로직 제거 -> 함수(save_video_link)가 알아서 함
                     save_video_link(v_url, v_title)
                     st.success("영상이 '경기 영상' 탭에 게시되었습니다!")
-                    time.sleep(1.0) # 잠시 대기 후
-                    st.rerun()      # 새로고침해서 바로 반영
+                    time.sleep(1.0) 
+                    st.rerun()      
                 else:
                     st.error("제목과 링크를 모두 입력해주세요.")
-
-        # ... (기존 건의함 코드 ...)
-        
-        st.divider()
-        st.subheader("🗣️ 건의함")
-        suggestions = load_suggestions()
-        if suggestions: st.dataframe(suggestions, use_container_width=True)
-        else: st.info("건의 없음")
 
         st.divider()
         with st.expander("🛠️ 라인업 비상 수정"):
             if apps:
-                # [수정] '제외' 컬럼 추가하여 관리자가 수정 가능하게 함
                 cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고", "제외"]
                 df_final = pd.DataFrame(apps)
-                
-                # 없는 컬럼 초기화
                 for c in cols_edit:
                     if c not in df_final.columns: df_final[c] = ""
-                
                 edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
-                
                 if st.button("비상 저장"):
-                    df_final.update(edited_final)
-                    update_lineup(df_final)
-                    st.success("완료")
+                    df_final.update(edited_final); update_lineup(df_final); st.success("완료")
 
 # --- 탭 8: 경기 영상 (NEW) ---
 with tab8:
