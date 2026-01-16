@@ -242,6 +242,10 @@ def get_my_history(name, phone):
         try:
             records = sheet.get_all_records()
             for row in records:
+                # [수정] 제목이 'CLOSED'이거나 날짜가 '-'인 데이터는 통계에서 제외!
+                if str(row.get('게임제목')) == 'CLOSED' or str(row.get('일시')) == '-':
+                    continue
+                
                 if row.get('이름') == name and normalize_phone(row.get('연락처')) == clean_phone:
                     history.append(row)
         except:
