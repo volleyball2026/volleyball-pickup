@@ -1574,6 +1574,7 @@ with tab7:
                 else: st.warning("연락처 정보가 없습니다.")
             else: st.info("참가자가 없습니다.")
 
+# --- 탭 7 내부 ---
         st.divider()
         st.subheader("🛠️ 새 게임 개설")
         with st.form("create_game"):
@@ -1589,14 +1590,25 @@ with tab7:
             acc = st.text_input("계좌")
             contact = st.text_input("연락처")
             desc = st.text_area("공지사항")
+            
             if st.form_submit_button("개설하기"):
-                deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
-                info = {"제목": title, "일시": dt, "장소": loc, "성별": gender, "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, "마감일시": deadline_str}
-                save_game_info(info)
+                # [수정된 순서]
+                # 1. 기존 명단 처리 (아카이빙 및 초기화)를 '먼저' 수행해야 함
+                # 그래야 직전 게임 제목으로 기록이 남습니다.
                 if reset_chk: 
-                    archive_current_game()
-                    clear_applicants()
-                st.success("게임이 개설되었습니다.")
+                    archive_current_game() # 현재 명단을 '현재 제목(CLOSED 등)'으로 저장
+                    clear_applicants()     # 명단 비우기
+
+                # 2. 그 다음에 '새 게임 정보'를 저장
+                deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
+                info = {
+                    "제목": title, "일시": dt, "장소": loc, "성별": gender, 
+                    "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, 
+                    "마감일시": deadline_str
+                }
+                save_game_info(info)
+                
+                st.success("새 게임이 개설되었습니다! (기존 명단 정리 완료)")
                 time.sleep(1.5)
                 st.rerun()
         
