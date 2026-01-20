@@ -112,7 +112,7 @@ def simplify_level_name(level_full):
 # --- [기능 함수] ---
 # --- [함수 수정/추가] ---
 
-# --- [UI 함수] 점수 표시 디자인 (수정됨: 정규식 충돌 방지) ---
+# --- [UI 함수] 점수 표시 디자인 (수정됨: 태그 충돌 방지 로직) ---
 def format_score_html(score, reason):
     if reason is None: reason = ""
     
@@ -123,17 +123,26 @@ def format_score_html(score, reason):
     except:
         header = f"점수: {score}"
 
-    # 2. 색상 적용 (정규식 충돌 방지: 앞에 공백이나 시작점일 때만 매칭)
-    # \1은 공백을 유지하기 위함
+    # 2. 안전한 파싱 (문자열 분리 방식)
+    # 정규식 대신 공백으로 쪼개서 처리하므로 HTML 태그 오작동 원천 차단
+    items = reason.split()
+    formatted_items = []
     
-    # (+) 항목: 파란색 (#1E88E5)
-    reason = re.sub(r'(^|\s)(\+[\w가-힣\(\)\d]+)', r"\1<span style='color:#1E88E5; font-weight:bold;'>\2</span>", reason)
-    
-    # (-) 항목: 빨간색 (#E53935) -> 이제 font-weight의 '-'를 건드리지 않음!
-    reason = re.sub(r'(^|\s)(\-[\w가-힣\(\)\d]+)', r"\1<span style='color:#E53935; font-weight:bold;'>\2</span>", reason)
-    
-    # 기본 항목: 진한 회색 (#424242)
-    reason = re.sub(r'(^|\s)(기본[\w\(\)\d]*)', r"\1<span style='color:#424242; font-weight:bold;'>\2</span>", reason)
+    for item in items:
+        # (+) 항목: 파란색
+        if item.startswith('+'):
+            formatted_items.append(f"<span style='color:#1E88E5; font-weight:bold;'>{item}</span>")
+        # (-) 항목: 빨간색
+        elif item.startswith('-'):
+            formatted_items.append(f"<span style='color:#E53935; font-weight:bold;'>{item}</span>")
+        # 기본 항목: 진한 회색
+        elif item.startswith('기본'):
+            formatted_items.append(f"<span style='color:#424242; font-weight:bold;'>{item}</span>")
+        # 그 외 (파이프 등): 그대로 둠
+        else:
+            formatted_items.append(item)
+            
+    final_reason = " ".join(formatted_items)
 
     # 3. HTML 조립
     html = f"""
@@ -147,7 +156,7 @@ def format_score_html(score, reason):
         font-size: 0.85em; 
         line-height: 1.4;
     '>
-        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {reason}
+        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {final_reason}
     </div>
     """
     return html
