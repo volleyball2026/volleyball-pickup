@@ -523,10 +523,11 @@ def assign_positions_in_team(team_members):
                 
     return team_members
 
+# --- [알고리즘 최종 수정] 모든 포지션 충돌 회피 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
-    # [NEW] 제외 포지션 파싱 (쉼표로 구분된 문자열 -> 리스트)
+    # 제외 포지션 파싱
     for p in base_players:
         ex_str = str(p.get('제외', ''))
         if ex_str and ex_str.strip():
@@ -539,10 +540,9 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 세트 필터링 (기존 유지)
+        # 1. 해당 세트 신청자 필터링
         target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
-        
         current_pool = []
         for p in base_players:
             note = str(p.get('비고', ''))
@@ -552,42 +552,60 @@ def generate_vega_priority_schedule(df):
             else:
                 current_pool.append(p.copy())
 
-        # 점수 계산
+        # 2. 우선순위 점수 계산
         for p in current_pool:
             sc, re = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = sc; p['score_reason'] = re
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 팀 분배 (VEGA/PickUp 밸런싱)
-        match_cap = len(current_pool)
-        vegas = [p for p in current_pool if "[VEGA]" in p['이름']]
-        pickups = [p for p in current_pool if "[VEGA]" not in p['이름']]
+        # 3. VEGA 기반 팀 나누기 (VEGA=A팀 고정, 픽업=B팀 고정)
+        team_a = [p for p in current_pool if "[VEGA]" in str(p['이름'])] 
+        team_b = [p for p in current_pool if "[VEGA]" not in str(p['이름'])] 
         
-        # (시뮬레이션 로직은 길어서 생략하지만 기존 코드 그대로 사용됨)
-        # ... size_a 결정 및 팀 분배 ...
+        target_size = (len(current_pool) + 1) // 2
         
-        size_a = (match_cap + 1) // 2
-        team_a = []; team_b = []
-        
-        # (간략화된 분배 로직 예시 - 기존 복잡한 시뮬레이션 그대로 쓰셔도 무방)
-        for v in vegas:
-            if len(team_a) < size_a: team_a.append(v)
-            else: team_b.append(v)
-        for pk in pickups:
-            if len(team_a) < size_a: team_a.append(pk)
-            else: team_b.append(pk)
+        # [핵심 로직] A팀 인원 충원 시 '모든 포지션' 겹침 방지
+        while len(team_a) < target_size and len(team_b) > 0:
             
+            # 현재 A팀에 이미 존재하는 1순위 포지션들의 집합을 구함
+            # 예: {'세터', '레프트', '라이트'}
+            occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
+            
+            best_candidate = None
+            best_idx = -1
+            
+            # B팀 후보들을 점수 높은 순으로 훑어보면서
+            for i, p in enumerate(team_b):
+                p_role = str(p.get('1순위')).strip()
+                
+                # A팀에 없는 포지션을 가진 사람이면 바로 선택! (빈자리 채우기)
+                if p_role not in occupied_roles_a:
+                    best_candidate = p
+                    best_idx = i
+                    break
+            
+            # 만약 겹치지 않는 사람을 못 찾았다면? (전부 겹침)
+            # 어쩔 수 없이 점수 1등을 데려옴
+            if best_candidate is None:
+                best_candidate = team_b[0]
+                best_idx = 0
+                
+            # 이동 실행
+            team_a.append(best_candidate)
+            team_b.pop(best_idx)
+
+        # 4. 팀 내부 포지션 확정
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
-        # 상태 업데이트
+        # 5. 결과 기록
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
-            if mt == '1st': global_history[nm] += 1
-            if mt == 'wait': global_hardship[nm] += 10
-            elif mt == '3rd': global_hardship[nm] += 5
-            elif mt in ['2nd', 'random']: global_hardship[nm] += 3
+            if mt == '1st': global_history[nm] = global_history.get(nm, 0) + 1
+            if mt == 'wait': global_hardship[nm] = global_hardship.get(nm, 0) + 10
+            elif mt == '3rd': global_hardship[nm] = global_hardship.get(nm, 0) + 5
+            elif mt in ['2nd', 'random']: global_hardship[nm] = global_hardship.get(nm, 0) + 3
             
         final_rounds[round_num] = (final_a, final_b)
         
