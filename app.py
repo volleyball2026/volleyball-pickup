@@ -542,9 +542,12 @@ def assign_positions_in_team(team_members):
                 
     return team_members
 
+# --- [알고리즘 수정 Ver 3.7.3] 무작위 배정 점수 세분화 (성실도 반영) ---
+
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
+    # 제외 포지션 및 초기화
     for p in base_players:
         ex_str = str(p.get('제외', ''))
         p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()] if ex_str else []
@@ -554,6 +557,7 @@ def generate_vega_priority_schedule(df):
     final_rounds = {}
 
     for round_num in range(1, 4):
+        # 1. 세트 필터링
         target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
         current_pool = []
@@ -565,81 +569,92 @@ def generate_vega_priority_schedule(df):
             else:
                 current_pool.append(p.copy())
 
+        # 2. 우선순위 점수 계산
         for p in current_pool:
             sc, re = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = sc; p['score_reason'] = re
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # VEGA 기반 팀 나누기
+        # 3. VEGA 기반 팀 나누기
         team_a = [p for p in current_pool if "[VEGA]" in str(p['이름'])] 
         team_b = [p for p in current_pool if "[VEGA]" not in str(p['이름'])] 
         
         target_size = (len(current_pool) + 1) // 2
         
-        # [수정 2] B팀의 '모든 포지션 에이스' 보호 목록 작성
-        # 각 포지션별로 1순위 희망자 중 점수 1등은 '보호 대상'으로 등록
+        # B팀 에이스 보호 목록
         protected_players_b = set()
-        
-        # B팀 멤버들의 1순위 포지션들을 확인
         b_roles = set(str(p.get('1순위')).strip() for p in team_b)
-        
         for role in b_roles:
             if role == '선택 안함' or not role: continue
-            
-            # 해당 포지션을 1순위로 원한 B팀 멤버들 추출
             candidates = [p for p in team_b if str(p.get('1순위')).strip() == role]
             if candidates:
-                # 점수순 정렬 후 1등을 보호 명단에 추가
                 candidates.sort(key=lambda x: x['priority_score'], reverse=True)
-                top_player_name = candidates[0]['이름']
-                protected_players_b.add(top_player_name)
+                protected_players_b.add(candidates[0]['이름'])
 
-        # A팀 인원 충원 (B -> A 이동)
+        # A팀 인원 충원
         while len(team_a) < target_size and len(team_b) > 0:
-            # A팀에 이미 있는 1순위 포지션 목록
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
+            best_candidate = None; best_idx = -1
             
-            best_candidate = None
-            best_idx = -1
-            
-            # 1차 시도: A팀에 없는 포지션이면서 + 보호 대상이 아닌 사람 찾기
+            # 1차: 비보호 + 포지션 안 겹침
             for i, p in enumerate(team_b):
-                p_role = str(p.get('1순위')).strip()
-                p_name = p['이름']
-                
-                if p_name in protected_players_b: continue # 보호 대상 패스
-                
-                if p_role not in occupied_roles_a:
-                    best_candidate = p
-                    best_idx = i
-                    break
+                if p['이름'] in protected_players_b: continue 
+                if str(p.get('1순위')).strip() not in occupied_roles_a:
+                    best_candidate = p; best_idx = i; break
             
-            # 2차 시도: 적임자가 없으면, 보호 대상이 아닌 사람 중 점수 1등
+            # 2차: 비보호 + 겹침
             if best_candidate is None:
                 for i, p in enumerate(team_b):
                     if p['이름'] in protected_players_b: continue
-                    best_candidate = p
-                    best_idx = i
-                    break
+                    best_candidate = p; best_idx = i; break
             
-            # 3차 시도: 그래도 없으면(전원 보호 대상인 극단적 경우), 보호 무시하고 점수 1등 이동
+            # 3차: 강제 이동
             if best_candidate is None:
-                best_candidate = team_b[0]
-                best_idx = 0
+                best_candidate = team_b[0]; best_idx = 0
 
             team_a.append(best_candidate)
             team_b.pop(best_idx)
 
+        # 4. 포지션 배정
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
+        # 5. 결과 기록 및 마일리지 부여 [수정됨]
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
-            if mt == '1st': global_history[nm] = global_history.get(nm, 0) + 1
-            if mt == 'wait': global_hardship[nm] = global_hardship.get(nm, 0) + 10
-            elif mt == '3rd': global_hardship[nm] = global_hardship.get(nm, 0) + 5
-            elif mt in ['2nd', 'random']: global_hardship[nm] = global_hardship.get(nm, 0) + 3
+            
+            # 1순위 배정 카운트
+            if mt == '1st': 
+                global_history[nm] = global_history.get(nm, 0) + 1
+            
+            # [핵심 수정] 마일리지 점수표 변경
+            points_to_add = 0
+            
+            if mt == 'wait': 
+                points_to_add = 10
+            elif mt == '3rd':
+                points_to_add = 5
+            elif mt == '2nd':
+                points_to_add = 3
+            elif mt == 'random':
+                # 무작위 배정 시: 1,2,3순위를 모두 성실히 썼는지 확인
+                w1 = str(p.get('1순위', '')).strip()
+                w2 = str(p.get('2순위', '')).strip()
+                w3 = str(p.get('3순위', '')).strip()
+                
+                # "선택 안함"이나 빈칸이 아닌 유효한 값인지 체크
+                full_wishes = (w1 and w1 != "선택 안함") and \
+                              (w2 and w2 != "선택 안함") and \
+                              (w3 and w3 != "선택 안함")
+                
+                if full_wishes:
+                    points_to_add = 5 # 노력했으나 랜덤 -> 5점 보상
+                else:
+                    points_to_add = 3 # 대충 썼는데 랜덤 -> 3점 보상
+            
+            if points_to_add > 0:
+                global_hardship[nm] = global_hardship.get(nm, 0) + points_to_add
             
         final_rounds[round_num] = (final_a, final_b)
         
