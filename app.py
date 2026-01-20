@@ -1001,8 +1001,7 @@ with tab2:
         st.write("새로운 게임이 개설되고 팀 배정이 완료되면 이곳에 라인업이 공개됩니다.")
     
     else:
-        # [NEW] 2. 공개 여부 체크 (관리자만 무시하고 볼 수 있게 할 수도 있지만, 헷갈리니 일단 모두 숨김)
-        # 단, 관리자 탭에서 미리보기 가능하므로 여기선 철저히 숨김
+        # 2. 공개 여부 체크
         is_visible = str(current_game.get('공개여부', 'X')).upper().strip() == 'O'
         
         if not is_visible:
@@ -1013,12 +1012,11 @@ with tab2:
             ### ⏳ 잠시만 기다려주세요!
             - 현재 신청 마감 후 **팀 밸런스 조정 및 검토**를 진행하고 있습니다.
             - 검토가 완료되면 이곳에 라인업이 공개됩니다.
-            - 알림이 울리면 다시 확인해주세요! 🔔
             """)
             st.markdown("<div style='text-align: center; font-size: 80px; margin-top: 20px;'>🕵️‍♂️</div>", unsafe_allow_html=True)
             
         else:
-            # === 3. 정상 공개 화면 (기존 코드) ===
+            # === 3. 정상 공개 화면 (디자인 개선) ===
             with st.expander("📘 이용 가이드: 배정 기준 및 보는 법", expanded=False):
                 st.markdown("""
                 **1. 배정 기준 (우선순위 점수제)**
@@ -1028,14 +1026,6 @@ with tab2:
                 | **VEGA 회원** | `+100점` | **우선권 부여** |
                 | **1순위 배정** | `-10점`/회 | 오늘 1순위를 많이 할수록 **배정 누적**되어 양보 유도 |
                 | **기여도** | `+3~10점` | **대기/비선호 포지션** 수행 시 점수 적립 |
-
-                **2. 화면 보는 법**
-                - **팀 확인**: A팀(🔴) / B팀(🔵)
-                - **아이콘**: 
-                    - <span style='color:#1565C0; background-color:#E3F2FD; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span> : 1순위 희망 포지션 배정
-                    - <span style='color:#2E7D32; background-color:#E8F5E9; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span> : 2순위 희망 포지션 배정
-                    - <span style='color:#E65100; background-color:#FFF3E0; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span> : 3순위 희망 포지션 배정
-                    - <span style='color:#C62828; background-color:#FFEBEE; padding:1px 4px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span> : 무작위(임의) 배정
                 """, unsafe_allow_html=True)
 
             st.header("📋 이번 주 라인업")
@@ -1046,10 +1036,28 @@ with tab2:
                 st.info("확정 전")
             else:
                 df_final = pd.DataFrame(data_final)
-                if '이름' in df_final.columns and '연락처' in df_final.columns:
-                    df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
+                
+                # [중요] 점수 내역(score_reason)을 화면에 보여주기 위해 알고리즘 재실행
+                # (시트에 저장된 데이터에는 점수 상세 내역이 없을 수 있음)
                 if '이름' in df_final.columns:
+                    # 임시 계산 (화면 표시용)
+                    temp_rounds = generate_vega_priority_schedule(df_final)
+                    
+                    # 계산된 점수와 이유를 매핑
+                    score_map = {}
+                    reason_map = {}
+                    for r in temp_rounds.values():
+                        for p in r[0] + r[1]: # A팀 + B팀
+                            score_map[p['이름']] = p.get('priority_score', 0)
+                            reason_map[p['이름']] = p.get('score_reason', '')
+                    
+                    df_final['priority_score'] = df_final['이름'].map(score_map)
+                    df_final['score_reason'] = df_final['이름'].map(reason_map)
+                    
+                    # 이름 마스킹
                     df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
+                    if '이름' in df_final.columns and '연락처' in df_final.columns:
+                        df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
                 
                 st.divider()
 
@@ -1088,27 +1096,38 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                def get_priority_badge(row, pos_col):
-                                    current = str(row[pos_col]).strip()
-                                    w1 = str(row.get('1순위', '')).strip()
-                                    w2 = str(row.get('2순위', '')).strip()
-                                    w3 = str(row.get('3순위', '')).strip()
-                                    if current == w1: return "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #1565C0;'>1순위</span>"
-                                    elif current == w2: return "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #2E7D32;'>2순위</span>"
-                                    elif current == w3: return "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #E65100;'>3순위</span>"
-                                    else: return "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #C62828;'>무</span>"
+                                # [NEW] 카드 디자인 출력 함수
+                                def display_player_card(row, team_color):
+                                    pos = row[col_pos]
+                                    name = row['이름_masked']
+                                    wish = str(row.get('1순위', '')).strip()
+                                    
+                                    # 배지
+                                    badge = ""
+                                    if pos == wish: badge = "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span>"
+                                    elif pos == str(row.get('2순위','')).strip(): badge = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span>"
+                                    elif pos == str(row.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
+                                    else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
+                                    
+                                    # [핵심] 점수 HTML 포맷팅 함수 호출
+                                    score_html = format_score_html(row.get('score_reason', ''))
+                                    
+                                    st.markdown(f"""
+                                    <div style='margin-bottom: 12px;'>
+                                        <div><strong>{pos}</strong>: {name} {badge} <span style='color:#888; font-size:0.8em;'>({row.get('레벨','')})</span></div>
+                                        {score_html}
+                                    </div>
+                                    """, unsafe_allow_html=True)
 
                                 c1, c2 = st.columns(2)
                                 with c1:
                                     st.error(f"🔴 A팀 (VEGA)")
                                     for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
-                                        badge = get_priority_badge(r, col_pos)
-                                        st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                                        display_player_card(r, "red")
                                 with c2:
                                     st.info(f"🔵 B팀 (픽업)")
                                     for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
-                                        badge = get_priority_badge(r, col_pos)
-                                        st.markdown(f"- **{r[col_pos]}**: {r['이름_masked']} {badge} ({r.get('1순위', '')})", unsafe_allow_html=True)
+                                        display_player_card(r, "blue")
                                 
                                 st.markdown("---")
                                 bench = playing[playing[col_pos]=="대기"]
