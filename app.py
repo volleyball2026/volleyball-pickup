@@ -112,6 +112,42 @@ def simplify_level_name(level_full):
 # --- [기능 함수] ---
 # --- [함수 수정/추가] ---
 
+# --- [UI 함수] 점수 표시 디자인 (가독성 UP) ---
+def format_score_html(score_reason):
+    if not score_reason: return ""
+    
+    # 1. 텍스트 분리 ( | 기준으로 앞뒤 나눔)
+    # 예: "점수: 145.49 | 기본(50) +VEGA(100) ..."
+    try:
+        header, details = score_reason.split('|', 1)
+    except:
+        return f"<span style='color:#333;'>{score_reason}</span>"
+
+    # 2. 세부 항목 색상 적용 (정규식 활용)
+    # (+) 항목: 초록색, 굵게
+    details = re.sub(r'(\+[\w가-힣\(\)\d]+)', r"<span style='color:#2E7D32; font-weight:bold;'>\1</span>", details)
+    # (-) 항목: 빨간색, 굵게
+    details = re.sub(r'(\-[\w가-힣\(\)\d]+)', r"<span style='color:#C62828; font-weight:bold;'>\1</span>", details)
+    # 기본/기타: 진한 회색
+    details = re.sub(r'(기본[\w\(\)\d]*)', r"<span style='color:#1565C0; font-weight:bold;'>\1</span>", details)
+
+    # 3. 최종 HTML 조립 (배경색 추가로 가독성 확보)
+    html = f"""
+    <div style='
+        background-color: #F8F9FA; 
+        border: 1px solid #E0E0E0; 
+        border-radius: 6px; 
+        padding: 4px 8px; 
+        margin-top: 4px; 
+        color: #333333; 
+        font-size: 0.85em; 
+        line-height: 1.4;
+    '>
+        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {details}
+    </div>
+    """
+    return html
+
 def save_game_info(info_dict):
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
