@@ -464,51 +464,71 @@ def get_priority_score(player, global_history, global_hardship):
     score += random.random()
     return score, " ".join(reasons)
 
+# --- [알고리즘 수정 Ver 3.7.1] 3순위 고려 & 전 포지션 B팀 에이스 보호 ---
+
 def assign_positions_in_team(team_members):
-    # 1. 우선순위 점수 높은 순 정렬
+    # 1. 점수순 정렬
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
     # 초기화
     for p in team_members: 
         p['assigned_pos'] = None
         p['match_type'] = 'random'
-        p['got_1st'] = False
     
     team_size = len(team_members)
     quotas = POSITION_QUOTAS.copy()
     
-    # 인원별 쿼터 조정 (기존 유지)
-    if team_size == 8:
-        c_fast = sum(1 for p in team_members if '속공' in [str(p['1순위']), str(p['2순위'])])
-        c_cb = sum(1 for p in team_members if '센터백' in [str(p['1순위']), str(p['2순위'])])
-        if c_fast >= c_cb: quotas['센터백'] = 0
-        else: quotas['속공'] = 0
-    elif team_size == 7: quotas['속공'] = 0; quotas['센터백'] = 0
-    elif team_size == 6: quotas['속공'] = 0; quotas['센터백'] = 0; quotas['백차'] = 0
+    # [수정 1] 유동적 쿼터 조정 (1, 2, 3순위 모두 고려)
+    wishes_1st = [str(p.get('1순위', '')).strip() for p in team_members]
+    wishes_2nd = [str(p.get('2순위', '')).strip() for p in team_members]
+    wishes_3rd = [str(p.get('3순위', '')).strip() for p in team_members]
     
-    # 1순위 -> 2순위 -> 3순위 배정 (단, 제외 포지션이면 패스)
+    # 전체 희망 포지션 풀 (1~3순위 통합)
+    wishes_all = wishes_1st + wishes_2nd + wishes_3rd
+    
+    count_fast = wishes_all.count('속공')
+    count_cb = wishes_all.count('센터백')
+    
+    # 인원별 쿼터 로직 (희망자 없으면 TO 전환)
+    if team_size >= 9:
+        # 3순위까지 털어도 속공 희망자가 0명이면 -> 센터백으로 전환
+        if count_fast == 0:
+            quotas['속공'] = 0
+            quotas['센터백'] += 1 
+    elif team_size == 8:
+        # 둘 다 희망자가 있으면 기본적으로 센터백을 0으로 하고 속공을 살림
+        # 단, 속공 희망자가 0명이면 센터백을 살림
+        if count_fast > 0:
+            quotas['센터백'] = 0 
+        else:
+            quotas['속공'] = 0 
+    elif team_size == 7:
+        quotas['속공'] = 0; quotas['센터백'] = 0
+    elif team_size == 6:
+        quotas['속공'] = 0; quotas['센터백'] = 0; quotas['백차'] = 0
+
+    # 1순위 -> 2순위 -> 3순위 배정
     for step in [1, 2, 3]:
         for p in team_members:
             if p['assigned_pos']: continue
             wish = str(p.get(f'{step}순위', '')).strip()
             
-            # [핵심] 자리가 있고(>0) AND 제외 포지션이 아닐 때만 배정
+            # 자리가 있고, 제외 포지션이 아니면 배정
             if wish and wish != "선택 안함" and quotas.get(wish, 0) > 0:
                 if wish not in p.get('excluded', []):
                     p['assigned_pos'] = wish
                     quotas[wish] -= 1
-                    if step == 1: p['match_type'] = '1st'; p['got_1st'] = True
+                    if step == 1: p['match_type'] = '1st'
                     elif step == 2: p['match_type'] = '2nd'
                     elif step == 3: p['match_type'] = '3rd'
     
-    # 남은 자리 (임의 배정) - 제외 포지션 회피
+    # 남은 자리 (임의 배정)
     for p in team_members:
         if not p['assigned_pos']:
             filled = False
             excluded_list = p.get('excluded', [])
             
             for pos, q in quotas.items():
-                # [핵심] 남은 자리 중 제외 포지션이 아닌 곳 찾기
                 if q > 0 and pos not in excluded_list:
                     p['assigned_pos'] = pos
                     quotas[pos] -= 1
@@ -516,31 +536,24 @@ def assign_positions_in_team(team_members):
                     filled = True
                     break
             
-            # 갈 곳이 없으면 대기 (남은 자리가 전부 기피 포지션일 때)
             if not filled: 
                 p['assigned_pos'] = "대기"
                 p['match_type'] = 'wait'
                 
     return team_members
 
-# --- [알고리즘 최종 수정] 모든 포지션 충돌 회피 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
-    # 제외 포지션 파싱
     for p in base_players:
         ex_str = str(p.get('제외', ''))
-        if ex_str and ex_str.strip():
-            p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()]
-        else:
-            p['excluded'] = []
+        p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()] if ex_str else []
 
     global_history = {p['이름']: 0 for p in base_players}
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
     for round_num in range(1, 4):
-        # 1. 해당 세트 신청자 필터링
         target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
         current_pool = []
@@ -552,54 +565,75 @@ def generate_vega_priority_schedule(df):
             else:
                 current_pool.append(p.copy())
 
-        # 2. 우선순위 점수 계산
         for p in current_pool:
             sc, re = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = sc; p['score_reason'] = re
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 3. VEGA 기반 팀 나누기 (VEGA=A팀 고정, 픽업=B팀 고정)
+        # VEGA 기반 팀 나누기
         team_a = [p for p in current_pool if "[VEGA]" in str(p['이름'])] 
         team_b = [p for p in current_pool if "[VEGA]" not in str(p['이름'])] 
         
         target_size = (len(current_pool) + 1) // 2
         
-        # [핵심 로직] A팀 인원 충원 시 '모든 포지션' 겹침 방지
-        while len(team_a) < target_size and len(team_b) > 0:
+        # [수정 2] B팀의 '모든 포지션 에이스' 보호 목록 작성
+        # 각 포지션별로 1순위 희망자 중 점수 1등은 '보호 대상'으로 등록
+        protected_players_b = set()
+        
+        # B팀 멤버들의 1순위 포지션들을 확인
+        b_roles = set(str(p.get('1순위')).strip() for p in team_b)
+        
+        for role in b_roles:
+            if role == '선택 안함' or not role: continue
             
-            # 현재 A팀에 이미 존재하는 1순위 포지션들의 집합을 구함
-            # 예: {'세터', '레프트', '라이트'}
+            # 해당 포지션을 1순위로 원한 B팀 멤버들 추출
+            candidates = [p for p in team_b if str(p.get('1순위')).strip() == role]
+            if candidates:
+                # 점수순 정렬 후 1등을 보호 명단에 추가
+                candidates.sort(key=lambda x: x['priority_score'], reverse=True)
+                top_player_name = candidates[0]['이름']
+                protected_players_b.add(top_player_name)
+
+        # A팀 인원 충원 (B -> A 이동)
+        while len(team_a) < target_size and len(team_b) > 0:
+            # A팀에 이미 있는 1순위 포지션 목록
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
             
             best_candidate = None
             best_idx = -1
             
-            # B팀 후보들을 점수 높은 순으로 훑어보면서
+            # 1차 시도: A팀에 없는 포지션이면서 + 보호 대상이 아닌 사람 찾기
             for i, p in enumerate(team_b):
                 p_role = str(p.get('1순위')).strip()
+                p_name = p['이름']
                 
-                # A팀에 없는 포지션을 가진 사람이면 바로 선택! (빈자리 채우기)
+                if p_name in protected_players_b: continue # 보호 대상 패스
+                
                 if p_role not in occupied_roles_a:
                     best_candidate = p
                     best_idx = i
                     break
             
-            # 만약 겹치지 않는 사람을 못 찾았다면? (전부 겹침)
-            # 어쩔 수 없이 점수 1등을 데려옴
+            # 2차 시도: 적임자가 없으면, 보호 대상이 아닌 사람 중 점수 1등
+            if best_candidate is None:
+                for i, p in enumerate(team_b):
+                    if p['이름'] in protected_players_b: continue
+                    best_candidate = p
+                    best_idx = i
+                    break
+            
+            # 3차 시도: 그래도 없으면(전원 보호 대상인 극단적 경우), 보호 무시하고 점수 1등 이동
             if best_candidate is None:
                 best_candidate = team_b[0]
                 best_idx = 0
-                
-            # 이동 실행
+
             team_a.append(best_candidate)
             team_b.pop(best_idx)
 
-        # 4. 팀 내부 포지션 확정
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
-        # 5. 결과 기록
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
             if mt == '1st': global_history[nm] = global_history.get(nm, 0) + 1
