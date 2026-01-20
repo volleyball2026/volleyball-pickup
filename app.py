@@ -112,24 +112,28 @@ def simplify_level_name(level_full):
 # --- [기능 함수] ---
 # --- [함수 수정/추가] ---
 
-# --- [UI 함수] 점수 표시 디자인 (수정됨: 소수점 2자리 & 색상 변경) ---
+# --- [UI 함수] 점수 표시 디자인 (수정됨: 정규식 충돌 방지) ---
 def format_score_html(score, reason):
     if reason is None: reason = ""
     
-    # 1. 점수 포맷팅 (소수점 2자리 복구)
+    # 1. 점수 포맷팅
     try:
         score_val = float(score)
         header = f"점수: {score_val:.2f}"
     except:
         header = f"점수: {score}"
 
-    # 2. 색상 적용 (정규식)
-    # (+) 항목: 파란색 (#1E88E5), 굵게
-    reason = re.sub(r'(\+[\w가-힣\(\)\d]+)', r"<span style='color:#1E88E5; font-weight:bold;'>\1</span>", reason)
-    # (-) 항목: 빨간색 (#E53935), 굵게
-    reason = re.sub(r'(\-[\w가-힣\(\)\d]+)', r"<span style='color:#E53935; font-weight:bold;'>\1</span>", reason)
-    # 기본: 진한 회색 (#424242)
-    reason = re.sub(r'(기본[\w\(\)\d]*)', r"<span style='color:#424242; font-weight:bold;'>\1</span>", reason)
+    # 2. 색상 적용 (정규식 충돌 방지: 앞에 공백이나 시작점일 때만 매칭)
+    # \1은 공백을 유지하기 위함
+    
+    # (+) 항목: 파란색 (#1E88E5)
+    reason = re.sub(r'(^|\s)(\+[\w가-힣\(\)\d]+)', r"\1<span style='color:#1E88E5; font-weight:bold;'>\2</span>", reason)
+    
+    # (-) 항목: 빨간색 (#E53935) -> 이제 font-weight의 '-'를 건드리지 않음!
+    reason = re.sub(r'(^|\s)(\-[\w가-힣\(\)\d]+)', r"\1<span style='color:#E53935; font-weight:bold;'>\2</span>", reason)
+    
+    # 기본 항목: 진한 회색 (#424242)
+    reason = re.sub(r'(^|\s)(기본[\w\(\)\d]*)', r"\1<span style='color:#424242; font-weight:bold;'>\2</span>", reason)
 
     # 3. HTML 조립
     html = f"""
