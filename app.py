@@ -110,9 +110,7 @@ def simplify_level_name(level_full):
     return level_full.split(" ")[0]
 
 # --- [기능 함수] ---
-# --- [함수 수정/추가] ---
-
-# --- [UI 함수] 점수 표시 디자인 (수정됨: 태그 충돌 방지 로직) ---
+# --- [UI 함수] 점수 표시 디자인 (수정됨: 줄바꿈 제거로 </div> 노출 버그 완벽 해결) ---
 def format_score_html(score, reason):
     if reason is None: reason = ""
     
@@ -124,7 +122,6 @@ def format_score_html(score, reason):
         header = f"점수: {score}"
 
     # 2. 안전한 파싱 (문자열 분리 방식)
-    # 정규식 대신 공백으로 쪼개서 처리하므로 HTML 태그 오작동 원천 차단
     items = reason.split()
     formatted_items = []
     
@@ -138,27 +135,15 @@ def format_score_html(score, reason):
         # 기본 항목: 진한 회색
         elif item.startswith('기본'):
             formatted_items.append(f"<span style='color:#424242; font-weight:bold;'>{item}</span>")
-        # 그 외 (파이프 등): 그대로 둠
+        # 그 외: 그대로
         else:
             formatted_items.append(item)
             
     final_reason = " ".join(formatted_items)
 
-    # 3. HTML 조립
-    html = f"""
-    <div style='
-        background-color: #F8F9FA; 
-        border: 1px solid #E0E0E0; 
-        border-radius: 6px; 
-        padding: 4px 8px; 
-        margin-top: 4px; 
-        color: #333333; 
-        font-size: 0.85em; 
-        line-height: 1.4;
-    '>
-        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {final_reason}
-    </div>
-    """
+    # 3. HTML 조립 (중요: 줄바꿈 없이 한 줄로 작성해야 마크다운 오류가 안 남)
+    html = f"<div style='background-color: #F8F9FA; border: 1px solid #E0E0E0; border-radius: 6px; padding: 4px 8px; margin-top: 4px; color: #333333; font-size: 0.85em; line-height: 1.4;'><span style='font-weight:bold; color:#333;'>└ {header}</span> | {final_reason}</div>"
+    
     return html
 
 def save_game_info(info_dict):
