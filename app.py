@@ -113,25 +113,26 @@ def simplify_level_name(level_full):
 # --- [함수 수정/추가] ---
 
 # --- [UI 함수] 점수 표시 디자인 (가독성 UP) ---
-def format_score_html(score_reason):
-    if not score_reason: return ""
+# --- [UI 함수] 점수 표시 디자인 (수정됨: 소수점 2자리 & 색상 변경) ---
+def format_score_html(score, reason):
+    if reason is None: reason = ""
     
-    # 1. 텍스트 분리 ( | 기준으로 앞뒤 나눔)
-    # 예: "점수: 145.49 | 기본(50) +VEGA(100) ..."
+    # 1. 점수 포맷팅 (소수점 2자리 복구)
     try:
-        header, details = score_reason.split('|', 1)
+        score_val = float(score)
+        header = f"점수: {score_val:.2f}"
     except:
-        return f"<span style='color:#333;'>{score_reason}</span>"
+        header = f"점수: {score}"
 
-    # 2. 세부 항목 색상 적용 (정규식 활용)
-    # (+) 항목: 초록색, 굵게
-    details = re.sub(r'(\+[\w가-힣\(\)\d]+)', r"<span style='color:#2E7D32; font-weight:bold;'>\1</span>", details)
-    # (-) 항목: 빨간색, 굵게
-    details = re.sub(r'(\-[\w가-힣\(\)\d]+)', r"<span style='color:#C62828; font-weight:bold;'>\1</span>", details)
-    # 기본/기타: 진한 회색
-    details = re.sub(r'(기본[\w\(\)\d]*)', r"<span style='color:#1565C0; font-weight:bold;'>\1</span>", details)
+    # 2. 색상 적용 (정규식)
+    # (+) 항목: 파란색 (#1E88E5), 굵게
+    reason = re.sub(r'(\+[\w가-힣\(\)\d]+)', r"<span style='color:#1E88E5; font-weight:bold;'>\1</span>", reason)
+    # (-) 항목: 빨간색 (#E53935), 굵게
+    reason = re.sub(r'(\-[\w가-힣\(\)\d]+)', r"<span style='color:#E53935; font-weight:bold;'>\1</span>", reason)
+    # 기본: 진한 회색 (#424242) - 베이스 점수임
+    reason = re.sub(r'(기본[\w\(\)\d]*)', r"<span style='color:#424242; font-weight:bold;'>\1</span>", reason)
 
-    # 3. 최종 HTML 조립 (배경색 추가로 가독성 확보)
+    # 3. HTML 조립
     html = f"""
     <div style='
         background-color: #F8F9FA; 
@@ -143,7 +144,7 @@ def format_score_html(score_reason):
         font-size: 0.85em; 
         line-height: 1.4;
     '>
-        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {details}
+        <span style='font-weight:bold; color:#333;'>└ {header}</span> | {reason}
     </div>
     """
     return html
@@ -1096,21 +1097,23 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                # [NEW] 카드 디자인 출력 함수
+                               # [수정] 카드 디자인 출력 함수
                                 def display_player_card(row, team_color):
                                     pos = row[col_pos]
                                     name = row['이름_masked']
                                     wish = str(row.get('1순위', '')).strip()
                                     
-                                    # 배지
+                                    # (배지 로직은 기존과 동일...)
                                     badge = ""
                                     if pos == wish: badge = "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span>"
                                     elif pos == str(row.get('2순위','')).strip(): badge = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span>"
                                     elif pos == str(row.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
                                     else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
                                     
-                                    # [핵심] 점수 HTML 포맷팅 함수 호출
-                                    score_html = format_score_html(row.get('score_reason', ''))
+                                    # [핵심 변경] 점수와 이유를 각각 전달!
+                                    sc = row.get('priority_score', 0)
+                                    re_txt = row.get('score_reason', '')
+                                    score_html = format_score_html(sc, re_txt)
                                     
                                     st.markdown(f"""
                                     <div style='margin-bottom: 12px;'>
@@ -1133,7 +1136,12 @@ with tab2:
                                 bench = playing[playing[col_pos]=="대기"]
                                 if not bench.empty:
                                     st.caption(f"🛌 **대기**")
-                                    for _, r in bench.iterrows(): st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
+                                    for _, r in bench.iterrows(): 
+                                        # [핵심 변경] 대기자도 점수 함수 사용
+                                        sc = r.get('priority_score', 0)
+                                        re_txt = r.get('score_reason', '')
+                                        st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
+                                        st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
                         else:
                             st.warning("아직 배정 정보가 없습니다.")
 # --- 탭 3: My Page ---
@@ -1580,19 +1588,23 @@ with tab6:
                         c1, c2 = st.columns(2)
                         
                         def display_admin_card(p, color):
+                            # (변수 설정 부분 기존 동일...)
                             pos = p.get('assigned_pos', '대기')
                             name = p['이름']
                             lv = str(p.get('레벨', '입문')).split(' ')[0]
                             wish = str(p.get('1순위', '')).strip()
                             
+                            # (배지 로직 기존 동일...)
                             badge = ""
                             if pos == wish: badge = "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span>"
                             elif pos == str(p.get('2순위','')).strip(): badge = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span>"
                             elif pos == str(p.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
                             else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
                             
-                            # [핵심] 점수 HTML 변환
-                            score_html = format_score_html(p.get('score_reason', ''))
+                            # [핵심 변경] 점수와 이유 분리 전달
+                            sc = p.get('priority_score', 0)
+                            re_txt = p.get('score_reason', '')
+                            score_html = format_score_html(sc, re_txt)
                             
                             st.markdown(f"""
                             <div style='margin-bottom: 10px;'>
@@ -1600,7 +1612,6 @@ with tab6:
                                 {score_html}
                             </div>
                             """, unsafe_allow_html=True)
-
                         with c1: 
                             st.error(f"🔴 A팀 (VEGA)")
                             for p in team_a: 
@@ -1610,13 +1621,17 @@ with tab6:
                             for p in team_b: 
                                 if p['assigned_pos']!="대기": display_admin_card(p, "blue")
                         
-                        st.markdown("---")
+                       st.markdown("---")
                         bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
                         bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
                         if bench_a or bench_b:
                             st.caption("🛌 **대기 인원**")
                             for p in bench_a + bench_b:
-                                st.write(f"- {p['이름']} (희망: {p['1순위']}) {format_score_html(p.get('score_reason', ''))}", unsafe_allow_html=True)
+                                # [핵심 변경]
+                                sc = p.get('priority_score', 0)
+                                re_txt = p.get('score_reason', '')
+                                st.write(f"- {p['이름']} (희망: {p['1순위']})")
+                                st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
 
             st.divider()
             st.subheader("🛠️ 결과 수정 및 확정")
