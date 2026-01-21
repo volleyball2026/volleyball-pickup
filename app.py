@@ -587,6 +587,7 @@ def assign_positions_in_team(team_members):
 
 # --- [알고리즘 수정] 4라운드(7·8세트)까지 생성 ---
 # --- [알고리즘 수정] 7·8세트 대상자 자동 승계 로직 ---
+# --- [알고리즘 수정 Ver 3.9] 팀 밸런스(총점) 최적화 배정 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
@@ -599,9 +600,14 @@ def generate_vega_priority_schedule(df):
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
+    # 레벨 점수 가져오기 함수
+    def get_level_val(p):
+        lvl = str(p.get('레벨', '입문')).split()[0]
+        return LEVEL_MAP.get(lvl, 1)
+
     # 1~4라운드 (7·8세트 포함)
     for round_num in range(1, 5):
-        target_set = f"{round_num*2-1}·{round_num*2}" # 예: "7·8"
+        target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
         
         current_pool = []
@@ -610,90 +616,103 @@ def generate_vega_priority_schedule(df):
             has_marker = any(m in note for m in valid_markers)
             
             if has_marker:
-                # [핵심 수정] 4라운드(7·8세트)인 경우, '7·8' 태그가 없으므로 '5·6' 신청자를 데려옴
-                if round_num == 4:
-                    if "5·6" in note: # 5·6세트 신청자는 7·8세트도 가능하다고 가정
-                        current_pool.append(p.copy())
+                if round_num == 4: # 4라운드는 5·6세트 승계
+                    if "5·6" in note: current_pool.append(p.copy())
                 else:
-                    # 1~3라운드는 본인 세트가 있어야 함
-                    if target_set in note: 
-                        current_pool.append(p.copy())
+                    if target_set in note: current_pool.append(p.copy())
             else:
-                # 시간 선택 안 한 사람(풀타임)은 무조건 포함
                 current_pool.append(p.copy())
 
-        # 2. 우선순위 점수 계산
+        # 점수 계산
         for p in current_pool:
             sc, re = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = sc; p['score_reason'] = re
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 3. VEGA 기반 팀 나누기
+        # VEGA vs 픽업 분리
         team_a = [p for p in current_pool if "[VEGA]" in str(p['이름'])] 
         team_b = [p for p in current_pool if "[VEGA]" not in str(p['이름'])] 
         
         target_size = (len(current_pool) + 1) // 2
         
-        # B팀 에이스 보호 목록
-        protected_players_b = set()
-        b_roles = set(str(p.get('1순위')).strip() for p in team_b)
-        for role in b_roles:
-            if role == '선택 안함' or not role: continue
-            candidates = [p for p in team_b if str(p.get('1순위')).strip() == role]
-            if candidates:
-                candidates.sort(key=lambda x: x['priority_score'], reverse=True)
-                protected_players_b.add(candidates[0]['이름'])
-
-        # A팀 인원 충원 (B -> A 이동)
+        # [핵심 로직] 밸런스(총점 차이 최소화) 이동
+        # B팀에서 A팀으로 누구를 보낼까?
+        # -> "이 사람을 보냈을 때 A팀과 B팀의 점수 격차가 가장 적은 사람"을 선택
+        
         while len(team_a) < target_size and len(team_b) > 0:
+            # 1. 현재 양 팀 점수 계산 (이동 전)
+            score_a = sum(get_level_val(p) for p in team_a)
+            score_b = sum(get_level_val(p) for p in team_b)
+            
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
-            best_candidate = None; best_idx = -1
             
-            # 1차: 비보호 + 포지션 안 겹침
+            # 후보군 분류
+            # Group 1: A팀에 없는 포지션을 가진 사람 (Best Fit)
+            candidates_fit = []
+            # Group 2: 포지션이 겹치는 나머지 사람 (Fallback)
+            candidates_rest = []
+            
             for i, p in enumerate(team_b):
-                if p['이름'] in protected_players_b: continue 
-                if str(p.get('1순위')).strip() not in occupied_roles_a:
-                    best_candidate = p; best_idx = i; break
+                role = str(p.get('1순위')).strip()
+                if role and role not in occupied_roles_a:
+                    candidates_fit.append(i)
+                else:
+                    candidates_rest.append(i)
             
-            # 2차: 비보호 + 겹침
-            if best_candidate is None:
-                for i, p in enumerate(team_b):
-                    if p['이름'] in protected_players_b: continue
-                    best_candidate = p; best_idx = i; break
+            # 밸런스 최적화 함수
+            def find_best_balancer(indices):
+                best_idx = -1
+                min_gap = float('inf')
+                
+                for idx in indices:
+                    p_val = get_level_val(team_b[idx])
+                    
+                    # 시뮬레이션: 이 사람이 A로 가면?
+                    new_a = score_a + p_val
+                    new_b = score_b - p_val # B에서는 빠짐
+                    gap = abs(new_a - new_b)
+                    
+                    if gap < min_gap:
+                        min_gap = gap
+                        best_idx = idx
+                    
+                return best_idx
+
+            # 선택: Fit 그룹 우선, 없으면 Rest 그룹
+            target_idx = -1
+            if candidates_fit:
+                target_idx = find_best_balancer(candidates_fit)
+            else:
+                target_idx = find_best_balancer(candidates_rest)
             
-            # 3차: 강제 이동
-            if best_candidate is None:
-                best_candidate = team_b[0]; best_idx = 0
+            # 이동 실행
+            p_move = team_b.pop(target_idx)
+            team_a.append(p_move)
 
-            team_a.append(best_candidate)
-            team_b.pop(best_idx)
-
-        # 4. 포지션 배정
+        # 포지션 배정
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
-        # 5. 결과 기록
+        # 결과 기록
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
             
-            if mt == '1st': 
-                global_history[nm] = global_history.get(nm, 0) + 1
+            if mt == '1st': global_history[nm] = global_history.get(nm, 0) + 1
             
-            points_to_add = 0
-            if mt == 'wait': points_to_add = 10
-            elif mt == '3rd': points_to_add = 5
-            elif mt == '2nd': points_to_add = 3
+            points = 0
+            if mt == 'wait': points = 10
+            elif mt == '3rd': points = 5
+            elif mt == '2nd': points = 3
             elif mt == 'random':
                 w1 = str(p.get('1순위', '')).strip()
                 w2 = str(p.get('2순위', '')).strip()
                 w3 = str(p.get('3순위', '')).strip()
-                full_wishes = (w1 and w1 != "선택 안함") and (w2 and w2 != "선택 안함") and (w3 and w3 != "선택 안함")
-                if full_wishes: points_to_add = 5 
-                else: points_to_add = 3 
+                if w1 and w2 and w3: points = 5 
+                else: points = 3 
             
-            if points_to_add > 0:
-                global_hardship[nm] = global_hardship.get(nm, 0) + points_to_add
+            if points > 0:
+                global_hardship[nm] = global_hardship.get(nm, 0) + points
             
         final_rounds[round_num] = (final_a, final_b)
         
