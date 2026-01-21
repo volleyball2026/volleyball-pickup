@@ -586,10 +586,11 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정 Ver 3.7.3] 무작위 배정 점수 세분화 (성실도 반영) ---
 
 # --- [알고리즘 수정] 4라운드(7·8세트)까지 생성 ---
+# --- [알고리즘 수정] 7·8세트 대상자 자동 승계 로직 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
-    # 제외 포지션 및 초기화
+    # 제외 포지션 파싱
     for p in base_players:
         ex_str = str(p.get('제외', ''))
         p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()] if ex_str else []
@@ -598,23 +599,27 @@ def generate_vega_priority_schedule(df):
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
-    # [수정] range(1, 4) -> range(1, 5)로 변경 (7·8세트 포함)
+    # 1~4라운드 (7·8세트 포함)
     for round_num in range(1, 5):
-        # 1. 세트 필터링
-        target_set = f"{round_num*2-1}·{round_num*2}"
-        # 사용자가 선택할 수 있는 옵션은 1~6세트뿐이므로 마커는 그대로 둠
-        valid_markers = ["1·2", "3·4", "5·6"] 
+        target_set = f"{round_num*2-1}·{round_num*2}" # 예: "7·8"
+        valid_markers = ["1·2", "3·4", "5·6"]
         
         current_pool = []
         for p in base_players:
             note = str(p.get('비고', ''))
             has_marker = any(m in note for m in valid_markers)
             
-            # 시간 선택을 한 경우: 해당 세트가 비고에 있어야 함 (7·8세트는 선택 불가하므로 시간 지정자는 자동 제외됨)
-            # 시간 선택을 안 한 경우(풀타임): 7·8세트에도 자동 포함됨
             if has_marker:
-                if target_set in note: current_pool.append(p.copy())
+                # [핵심 수정] 4라운드(7·8세트)인 경우, '7·8' 태그가 없으므로 '5·6' 신청자를 데려옴
+                if round_num == 4:
+                    if "5·6" in note: # 5·6세트 신청자는 7·8세트도 가능하다고 가정
+                        current_pool.append(p.copy())
+                else:
+                    # 1~3라운드는 본인 세트가 있어야 함
+                    if target_set in note: 
+                        current_pool.append(p.copy())
             else:
+                # 시간 선택 안 한 사람(풀타임)은 무조건 포함
                 current_pool.append(p.copy())
 
         # 2. 우선순위 점수 계산
@@ -640,7 +645,7 @@ def generate_vega_priority_schedule(df):
                 candidates.sort(key=lambda x: x['priority_score'], reverse=True)
                 protected_players_b.add(candidates[0]['이름'])
 
-        # A팀 인원 충원
+        # A팀 인원 충원 (B -> A 이동)
         while len(team_a) < target_size and len(team_b) > 0:
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
             best_candidate = None; best_idx = -1
