@@ -222,9 +222,11 @@ def load_applicants():
 def add_applicant(name, phone, level, pos1, pos2, pos3, note, excluded_str):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
+        # [수정] 팀1~4, 확정1~4 (총 8개 빈칸)으로 확장
         row_data = [
             name, normalize_phone(phone), level, pos1, pos2, pos3, 
-            "", "", "", pos1, pos2, pos3, 
+            "", "", "", "", # 팀1, 팀2, 팀3, 팀4
+            "", "", "", "", # 확정1, 확정2, 확정3, 확정4
             anonymize_name(name), "X", note, excluded_str
         ]
         sheet.append_row(row_data)
@@ -249,9 +251,11 @@ def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
+        # [수정] 헤더에 팀4, 확정4 추가
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
-            "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
+            "팀1", "팀2", "팀3", "팀4", 
+            "확정1", "확정2", "확정3", "확정4", 
             "이름(가림)", "입금", "비고", "제외"
         ]
         sheet.append_row(headers)
@@ -272,9 +276,11 @@ def clear_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
+        # [수정] 헤더에 팀4, 확정4 추가
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
-            "팀1", "팀2", "팀3", "확정1", "확정2", "확정3", 
+            "팀1", "팀2", "팀3", "팀4", 
+            "확정1", "확정2", "확정3", "확정4", 
             "이름(가림)", "입금", "비고", "제외"
         ]
         sheet.append_row(headers)
@@ -578,6 +584,7 @@ def assign_positions_in_team(team_members):
 
 # --- [알고리즘 수정 Ver 3.7.3] 무작위 배정 점수 세분화 (성실도 반영) ---
 
+# --- [알고리즘 수정] 4라운드(7·8세트)까지 생성 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
@@ -590,14 +597,20 @@ def generate_vega_priority_schedule(df):
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
-    for round_num in range(1, 4):
+    # [수정] range(1, 4) -> range(1, 5)로 변경 (7·8세트 포함)
+    for round_num in range(1, 5):
         # 1. 세트 필터링
         target_set = f"{round_num*2-1}·{round_num*2}"
-        valid_markers = ["1·2", "3·4", "5·6"]
+        # 사용자가 선택할 수 있는 옵션은 1~6세트뿐이므로 마커는 그대로 둠
+        valid_markers = ["1·2", "3·4", "5·6"] 
+        
         current_pool = []
         for p in base_players:
             note = str(p.get('비고', ''))
             has_marker = any(m in note for m in valid_markers)
+            
+            # 시간 선택을 한 경우: 해당 세트가 비고에 있어야 함 (7·8세트는 선택 불가하므로 시간 지정자는 자동 제외됨)
+            # 시간 선택을 안 한 경우(풀타임): 7·8세트에도 자동 포함됨
             if has_marker:
                 if target_set in note: current_pool.append(p.copy())
             else:
@@ -654,38 +667,24 @@ def generate_vega_priority_schedule(df):
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
-        # 5. 결과 기록 및 마일리지 부여 [수정됨]
+        # 5. 결과 기록
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
             
-            # 1순위 배정 카운트
             if mt == '1st': 
                 global_history[nm] = global_history.get(nm, 0) + 1
             
-            # [핵심 수정] 마일리지 점수표 변경
             points_to_add = 0
-            
-            if mt == 'wait': 
-                points_to_add = 10
-            elif mt == '3rd':
-                points_to_add = 5
-            elif mt == '2nd':
-                points_to_add = 3
+            if mt == 'wait': points_to_add = 10
+            elif mt == '3rd': points_to_add = 5
+            elif mt == '2nd': points_to_add = 3
             elif mt == 'random':
-                # 무작위 배정 시: 1,2,3순위를 모두 성실히 썼는지 확인
                 w1 = str(p.get('1순위', '')).strip()
                 w2 = str(p.get('2순위', '')).strip()
                 w3 = str(p.get('3순위', '')).strip()
-                
-                # "선택 안함"이나 빈칸이 아닌 유효한 값인지 체크
-                full_wishes = (w1 and w1 != "선택 안함") and \
-                              (w2 and w2 != "선택 안함") and \
-                              (w3 and w3 != "선택 안함")
-                
-                if full_wishes:
-                    points_to_add = 5 # 노력했으나 랜덤 -> 5점 보상
-                else:
-                    points_to_add = 3 # 대충 썼는데 랜덤 -> 3점 보상
+                full_wishes = (w1 and w1 != "선택 안함") and (w2 and w2 != "선택 안함") and (w3 and w3 != "선택 안함")
+                if full_wishes: points_to_add = 5 
+                else: points_to_add = 3 
             
             if points_to_add > 0:
                 global_hardship[nm] = global_hardship.get(nm, 0) + points_to_add
@@ -1055,10 +1054,12 @@ with tab2:
                 
                 st.divider()
 
-                lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
-                for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3")], 1):
+                lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
+                # [수정] 루프 데이터에 ("팀4", "확정4") 추가
+                for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3"), ("팀4", "확정4")], 1):
                     with lineup_tabs[i-1]:
                         if col_pos in df_final.columns and col_team in df_final.columns:
+                            # (이하 기존 로직 동일)
                             playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
                             
                             if not playing.empty:
@@ -1442,11 +1443,11 @@ with tab6:
                     restored_results = {}
                     base_players = df.to_dict('records')
                     
-                    # 점수 재계산을 위한 변수
                     d_hist = {p['이름']: 0 for p in base_players}
                     d_hard = {p['이름']: 0 for p in base_players}
                     
-                    for r in range(1, 4):
+                    # [수정] range(1, 4) -> range(1, 5)로 변경 (복구 시에도 4라운드 확인)
+                    for r in range(1, 5):
                         col_team = f"팀{r}"
                         col_pos = f"확정{r}"
                         team_a = []
@@ -1505,9 +1506,9 @@ with tab6:
                     st.session_state['fair_results'] = generate_vega_priority_schedule(df)
                     st.success("생성 완료! 아래 내용을 확인하고 '저장' 버튼을 누르세요.")
                     
-            # [결과 표시]
+           # [결과 표시]
             if 'fair_results' in st.session_state:
-                # 1. 데이터프레임에 결과 반영 (편집기용)
+                # 1. 데이터프레임 반영
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
@@ -1520,12 +1521,14 @@ with tab6:
                 for idx, row in df.iterrows():
                     name = row['이름']
                     if name in schedule_map:
-                        for r in range(1, 4): 
+                        # [수정] range(1, 4) -> range(1, 5) (데이터프레임에 팀4, 확정4 주입)
+                        for r in range(1, 5): 
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
-                # 2. 화면 출력 (디자인 개선됨)
-                r_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트"])
+                # 2. 화면 출력
+                # [수정] 4번째 탭 추가
+                r_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
@@ -1624,7 +1627,8 @@ with tab6:
 
             st.divider()
             st.subheader("🛠️ 결과 수정 및 확정")
-            cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고"]
+            # [수정] 편집 컬럼에 팀4, 확정4 추가
+            cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "팀4", "확정4", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             
             if st.button("💾 저장 (공개)", type="primary"):
