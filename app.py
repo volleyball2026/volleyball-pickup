@@ -643,6 +643,7 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정 Ver 3.9] 팀 밸런스(총점) 최적화 배정 ---
 # --- [알고리즘 수정 Ver 3.9.2] 포지션 핏 -> 밸런스 최적화 -> 에이스 보호 ---
 # --- [알고리즘 수정 Ver 3.9.5] 1~3순위 빈자리 매칭 + 에이스 보호 ---
+# --- [알고리즘 수정 Ver 3.9.6] 희귀 포지션(속공/세터 등) 절대 사수 로직 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
@@ -685,41 +686,69 @@ def generate_vega_priority_schedule(df):
         
         target_size = (len(current_pool) + 1) // 2
         
-        # [핵심 로직 수정] B -> A 이동
-        # 기준: A팀의 빈 포지션을 1,2,3순위 중 하나라도 채울 수 있는 사람 우선
-        # Tie-breaker: 점수가 낮은 사람 (에이스 보호)
-        
+        # [핵심 로직 수정] B -> A 이동 (희소성 고려)
         while len(team_a) < target_size and len(team_b) > 0:
-            # A팀의 현재 1순위 포지션 현황 (이미 찬 자리들)
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
             
-            candidates_fit = []  # A팀 빈자리를 채울 수 있는 사람
-            candidates_rest = [] # 채울 수 없는 사람 (겹침)
+            # 1. B팀의 포지션 현황 파악 (누가 희귀 자원인가?)
+            team_b_counts = {}
+            for p in team_b:
+                role = str(p.get('1순위', '')).strip()
+                if role: team_b_counts[role] = team_b_counts.get(role, 0) + 1
+            
+            # 후보군 분류 (튜플: (index, sort_key))
+            # sort_key: (희소성 점수, 점수)
+            # 희소성 점수: 0=잉여(보내도 됨), 1=보통, 2=희귀(절대 안보냄)
+            
+            candidates = []
             
             for i, p in enumerate(team_b):
+                # 1) Fit 여부 확인 (A팀 빈자리 채울 수 있나?)
                 is_fit = False
-                # 1, 2, 3순위를 순서대로 검사
                 for rank in ['1순위', '2순위', '3순위']:
-                    role = str(p.get(rank, '')).strip()
-                    # 유효한 포지션이고, A팀에 없는 자리라면? -> Fit!
-                    if role and role != '선택 안함' and role not in occupied_roles_a:
-                        is_fit = True
-                        break 
+                    r_val = str(p.get(rank, '')).strip()
+                    if r_val and r_val != '선택 안함' and r_val not in occupied_roles_a:
+                        is_fit = True; break
                 
-                if is_fit:
-                    candidates_fit.append(i)
-                else:
-                    candidates_rest.append(i)
+                # 2) 희소성 확인 (B팀에서 내가 유일한가?)
+                my_role = str(p.get('1순위', '')).strip()
+                count_in_b = team_b_counts.get(my_role, 0)
+                
+                # 보호 레벨 설정
+                # 레벨 0: B팀에 내 포지션 2명 이상 있음 (잉여 자원 -> 우선 방출 대상)
+                # 레벨 1: B팀에 나 혼자임 (희귀 자원 -> 보호 대상)
+                protection_level = 1 if count_in_b == 1 else 0
+                
+                # Fit 보너스: A팀에 딱 맞는 사람은 우선순위 높임 (보내는 게 이득)
+                # 하지만 희귀 자원 보호가 더 강력해야 함.
+                
+                # 정렬 키 설계: (보호레벨 오름차순, Fit 여부 내림차순, 점수 오름차순)
+                # 1. 보호레벨 낮을수록(0) 먼저 선택됨
+                # 2. Fit 할수록(True) 먼저 선택됨 (같은 잉여 자원이면 쓸모있는 사람 보냄)
+                # 3. 점수 낮을수록 먼저 선택됨 (에이스 보호)
+                
+                # Python sort는 오름차순이 기본. 
+                # 우리는 "선택될 사람"을 리스트의 맨 뒤(pop)로 보내거나, min/max를 잘 써야 함.
+                # 편의상 리스트에 넣고 "가장 적합한 방출 대상"을 찾자.
+                
+                # 점수: 작을수록 방출 유력
+                score_val = p['priority_score']
+                
+                # 종합 방출 점수 (높을수록 방출)
+                # 1. 희귀하면 감점 (-1000)
+                # 2. Fit하면 가산점 (+500)
+                # 3. 점수가 낮으면 가산점 (+ (1000 - score))
+                
+                release_score = 0
+                if protection_level == 1: release_score -= 10000 # 절대 지켜
+                if is_fit: release_score += 500 # 가서 잘하면 보내
+                release_score += (1000 - score_val) # 점수 낮으면 보내
+                
+                candidates.append((i, release_score))
             
-            target_idx = -1
-            
-            if candidates_fit:
-                # 1. 적합자(Fit) 중에서 점수가 가장 낮은 사람 선택
-                # team_b는 점수 내림차순 정렬 상태 -> 인덱스가 클수록 점수가 낮음
-                target_idx = max(candidates_fit)
-            else:
-                # 2. 적합자가 없으면 나머지(Rest) 중에서 점수가 가장 낮은 사람 선택
-                target_idx = max(candidates_rest) # == len(team_b) - 1 (꼴찌)
+            # 방출 점수가 가장 높은 사람 선택
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            target_idx = candidates[0][0]
             
             # 이동 실행
             p_move = team_b.pop(target_idx)
