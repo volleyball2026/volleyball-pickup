@@ -506,8 +506,11 @@ def get_priority_score(player, global_history, global_hardship):
 
 # --- [알고리즘 수정 Ver 3.7.1] 3순위 고려 & 전 포지션 B팀 에이스 보호 ---
 
+# --- [알고리즘 수정 Ver 3.8] 점수 절대 우선 배정 (고득점자 깡패 모드) ---
+
 def assign_positions_in_team(team_members):
-    # 1. 점수순 정렬
+    # 1. 점수순 정렬 (가장 중요한 기준)
+    # 점수가 높은 사람이 먼저 포지션을 고를 권한을 가짐
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
     # 초기화
@@ -518,51 +521,49 @@ def assign_positions_in_team(team_members):
     team_size = len(team_members)
     quotas = POSITION_QUOTAS.copy()
     
-    # [수정 1] 유동적 쿼터 조정 (1, 2, 3순위 모두 고려)
+    # [유동적 쿼터 조정]
     wishes_1st = [str(p.get('1순위', '')).strip() for p in team_members]
     wishes_2nd = [str(p.get('2순위', '')).strip() for p in team_members]
     wishes_3rd = [str(p.get('3순위', '')).strip() for p in team_members]
-    
-    # 전체 희망 포지션 풀 (1~3순위 통합)
     wishes_all = wishes_1st + wishes_2nd + wishes_3rd
     
     count_fast = wishes_all.count('속공')
     count_cb = wishes_all.count('센터백')
     
-    # 인원별 쿼터 로직 (희망자 없으면 TO 전환)
     if team_size >= 9:
-        # 3순위까지 털어도 속공 희망자가 0명이면 -> 센터백으로 전환
         if count_fast == 0:
-            quotas['속공'] = 0
-            quotas['센터백'] += 1 
+            quotas['속공'] = 0; quotas['센터백'] += 1 
     elif team_size == 8:
-        # 둘 다 희망자가 있으면 기본적으로 센터백을 0으로 하고 속공을 살림
-        # 단, 속공 희망자가 0명이면 센터백을 살림
-        if count_fast > 0:
-            quotas['센터백'] = 0 
-        else:
-            quotas['속공'] = 0 
+        if count_fast > 0: quotas['센터백'] = 0 
+        else: quotas['속공'] = 0 
     elif team_size == 7:
         quotas['속공'] = 0; quotas['센터백'] = 0
     elif team_size == 6:
         quotas['속공'] = 0; quotas['센터백'] = 0; quotas['백차'] = 0
 
-    # 1순위 -> 2순위 -> 3순위 배정
-    for step in [1, 2, 3]:
-        for p in team_members:
-            if p['assigned_pos']: continue
+    # 2. [핵심 변경] 사람별로 순서대로 희망 포지션 확인 (점수 높은 사람부터 처리)
+    # 기존: 1순위 타임 -> 2순위 타임 (점수 낮아도 1순위면 장땡이었음)
+    # 변경: 고득점자(1순위 체크 -> 없으면 2순위 체크 -> 없으면 3순위 체크) -> 다음 사람
+    
+    for p in team_members:
+        # 이 사람의 1, 2, 3순위를 순서대로 확인
+        for step in [1, 2, 3]:
             wish = str(p.get(f'{step}순위', '')).strip()
             
-            # 자리가 있고, 제외 포지션이 아니면 배정
+            # 유효한 희망 포지션이고, 자리가 남아있다면?
             if wish and wish != "선택 안함" and quotas.get(wish, 0) > 0:
+                # 제외 포지션이 아니라면 배정 확정
                 if wish not in p.get('excluded', []):
                     p['assigned_pos'] = wish
                     quotas[wish] -= 1
+                    
                     if step == 1: p['match_type'] = '1st'
                     elif step == 2: p['match_type'] = '2nd'
                     elif step == 3: p['match_type'] = '3rd'
+                    
+                    break # 배정되었으니 다음 순위 보지 않고 종료
     
-    # 남은 자리 (임의 배정)
+    # 3. 남은 자리 (임의 배정) - 점수 낮은 사람들
     for p in team_members:
         if not p['assigned_pos']:
             filled = False
