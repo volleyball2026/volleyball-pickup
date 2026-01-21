@@ -1123,25 +1123,65 @@ with tab2:
             else:
                 df_final = pd.DataFrame(data_final)
                 
-                # [수정] 라운드별 점수 스냅샷 저장 (DB)
-                round_score_db = {} 
+                # [수정] 점수 역추적 리플레이 로직 (Replay Logic)
+                # 시뮬레이션(랜덤)을 돌리는 게 아니라, 저장된 확정 결과를 바탕으로 점수를 정확히 계산함
                 
-                if '이름' in df_final.columns:
-                    # 시뮬레이션을 돌려서 각 라운드 당시의 점수를 확보
-                    temp_rounds = generate_vega_priority_schedule(df_final)
+                round_score_db = {}
+                d_hist = {p['이름']: 0 for p in df_final.to_dict('records')}
+                d_hard = {p['이름']: 0 for p in df_final.to_dict('records')}
+                
+                # 1~4라운드 순차적으로 점수 계산 및 업데이트
+                for r in range(1, 5):
+                    round_score_db[r] = {}
+                    col_pos = f"확정{r}"
                     
-                    # 라운드별로 점수 저장 {1: {이름: 점수정보}, 2: ...}
-                    for r_idx, (team_a, team_b) in temp_rounds.items():
-                        round_score_db[r_idx] = {}
-                        for p in team_a + team_b:
-                            round_score_db[r_idx][p['이름']] = {
-                                'score': p.get('priority_score', 0),
-                                'reason': p.get('score_reason', '')
-                            }
+                    # 1. (현재 라운드 시작 전) 점수 스냅샷 저장
+                    for _, row in df_final.iterrows():
+                        nm = row['이름']
+                        p_data = row.to_dict()
+                        # 현재까지의 누적치(d_hist, d_hard)를 반영해 점수 계산
+                        sc, re = get_priority_score(p_data, d_hist, d_hard)
+                        round_score_db[r][nm] = {'score': sc, 'reason': re}
                     
-                    df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
-                    if '이름' in df_final.columns and '연락처' in df_final.columns:
-                        df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
+                    # 2. (현재 라운드 결과) 반영 -> 다음 라운드를 위한 누적치 업데이트
+                    if col_pos in df_final.columns:
+                        for _, row in df_final.iterrows():
+                            nm = row['이름']
+                            assigned = str(row.get(col_pos, '')).strip()
+                            
+                            if not assigned: continue
+                            
+                            # 매치 타입 판별
+                            w1 = str(row.get('1순위', '')).strip()
+                            w2 = str(row.get('2순위', '')).strip()
+                            w3 = str(row.get('3순위', '')).strip()
+                            
+                            match_type = 'random'
+                            if assigned == '대기': match_type = 'wait'
+                            elif assigned == w1: match_type = '1st'
+                            elif assigned == w2: match_type = '2nd'
+                            elif assigned == w3: match_type = '3rd'
+                            
+                            # 점수 업데이트 (알고리즘과 동일한 규칙 적용)
+                            if match_type == '1st': d_hist[nm] += 1
+                            
+                            pts = 0
+                            if match_type == 'wait': pts = 10
+                            elif match_type == '3rd': pts = 5
+                            elif match_type == '2nd': pts = 3
+                            elif match_type == 'random':
+                                # 3순위까지 다 썼는지 확인
+                                if w1 and w2 and w3 and w1!='선택 안함' and w2!='선택 안함' and w3!='선택 안함':
+                                    pts = 5
+                                else:
+                                    pts = 3
+                            
+                            if pts > 0: d_hard[nm] += pts
+
+                # --- 화면 표시 로직 ---
+                df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
+                if '이름' in df_final.columns and '연락처' in df_final.columns:
+                    df_final = df_final.drop_duplicates(subset=['이름', '연락처'], keep='last')
                 
                 st.divider()
 
@@ -1180,7 +1220,7 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                # [수정] 카드 디자인 출력 함수 (라운드별 점수 조회 적용)
+                                # 카드 디자인 출력 (리플레이된 정확한 점수 사용)
                                 def display_player_card(row, team_color):
                                     pos = row[col_pos]
                                     name = row['이름_masked']
@@ -1193,7 +1233,7 @@ with tab2:
                                     elif pos == str(row.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
                                     else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
                                     
-                                    # [핵심] 현재 라운드(i)에 맞는 점수 가져오기
+                                    # [핵심] 리플레이 DB에서 점수 가져오기
                                     sc = 0
                                     re_txt = ""
                                     if i in round_score_db and real_name in round_score_db[i]:
@@ -1224,12 +1264,12 @@ with tab2:
                                 if not bench.empty:
                                     st.caption(f"🛌 **대기**")
                                     for _, r in bench.iterrows(): 
-                                        # 대기자 점수도 라운드별로 조회
                                         sc = 0
                                         re_txt = ""
-                                        if i in round_score_db and r['이름'] in round_score_db[i]:
-                                            sc = round_score_db[i][r['이름']]['score']
-                                            re_txt = round_score_db[i][r['이름']]['reason']
+                                        real_name = r['이름']
+                                        if i in round_score_db and real_name in round_score_db[i]:
+                                            sc = round_score_db[i][real_name]['score']
+                                            re_txt = round_score_db[i][real_name]['reason']
                                             
                                         st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
                                         st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
