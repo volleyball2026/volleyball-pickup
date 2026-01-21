@@ -588,6 +588,7 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정] 4라운드(7·8세트)까지 생성 ---
 # --- [알고리즘 수정] 7·8세트 대상자 자동 승계 로직 ---
 # --- [알고리즘 수정 Ver 3.9] 팀 밸런스(총점) 최적화 배정 ---
+# --- [알고리즘 수정 Ver 3.9.2] 포지션 핏 -> 밸런스 최적화 -> 에이스 보호 ---
 def generate_vega_priority_schedule(df):
     base_players = df.to_dict('records')
     
@@ -600,12 +601,12 @@ def generate_vega_priority_schedule(df):
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
-    # 레벨 점수 가져오기 함수
+    # 레벨 점수 가져오기 함수 (밸런스 계산용)
     def get_level_val(p):
         lvl = str(p.get('레벨', '입문')).split()[0]
         return LEVEL_MAP.get(lvl, 1)
 
-    # 1~4라운드 (7·8세트 포함)
+    # 1~4라운드
     for round_num in range(1, 5):
         target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
@@ -616,7 +617,7 @@ def generate_vega_priority_schedule(df):
             has_marker = any(m in note for m in valid_markers)
             
             if has_marker:
-                if round_num == 4: # 4라운드는 5·6세트 승계
+                if round_num == 4: 
                     if "5·6" in note: current_pool.append(p.copy())
                 else:
                     if target_set in note: current_pool.append(p.copy())
@@ -630,61 +631,51 @@ def generate_vega_priority_schedule(df):
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # VEGA vs 픽업 분리
+        # 팀 나누기 (VEGA vs 픽업)
         team_a = [p for p in current_pool if "[VEGA]" in str(p['이름'])] 
         team_b = [p for p in current_pool if "[VEGA]" not in str(p['이름'])] 
         
         target_size = (len(current_pool) + 1) // 2
         
-        # [핵심 로직] 밸런스(총점 차이 최소화) 이동
-        # B팀에서 A팀으로 누구를 보낼까?
-        # -> "이 사람을 보냈을 때 A팀과 B팀의 점수 격차가 가장 적은 사람"을 선택
-        
+        # [핵심 로직] B -> A 이동
         while len(team_a) < target_size and len(team_b) > 0:
-            # 1. 현재 양 팀 점수 계산 (이동 전)
+            # 현재 양 팀 전력 합계
             score_a = sum(get_level_val(p) for p in team_a)
             score_b = sum(get_level_val(p) for p in team_b)
             
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
             
             # 후보군 분류
-            # Group 1: A팀에 없는 포지션을 가진 사람 (Best Fit)
-            candidates_fit = []
-            # Group 2: 포지션이 겹치는 나머지 사람 (Fallback)
-            candidates_rest = []
+            candidates_fit = [] # A팀에 가면 1순위 포지션 할 수 있는 사람 (Good)
             
             for i, p in enumerate(team_b):
                 role = str(p.get('1순위')).strip()
                 if role and role not in occupied_roles_a:
                     candidates_fit.append(i)
-                else:
-                    candidates_rest.append(i)
             
-            # 밸런스 최적화 함수
-            def find_best_balancer(indices):
-                best_idx = -1
+            target_idx = -1
+            
+            if candidates_fit:
+                # [상황 1] 적합한 사람(Fit)이 있다! -> 그 중에서 '밸런스'가 가장 좋아지는 사람 선택
+                best_balancer_idx = -1
                 min_gap = float('inf')
                 
-                for idx in indices:
+                for idx in candidates_fit:
                     p_val = get_level_val(team_b[idx])
-                    
-                    # 시뮬레이션: 이 사람이 A로 가면?
-                    new_a = score_a + p_val
-                    new_b = score_b - p_val # B에서는 빠짐
-                    gap = abs(new_a - new_b)
+                    # 시뮬레이션: 이동 시 격차
+                    gap = abs((score_a + p_val) - (score_b - p_val))
                     
                     if gap < min_gap:
                         min_gap = gap
-                        best_idx = idx
-                    
-                return best_idx
-
-            # 선택: Fit 그룹 우선, 없으면 Rest 그룹
-            target_idx = -1
-            if candidates_fit:
-                target_idx = find_best_balancer(candidates_fit)
+                        best_balancer_idx = idx
+                
+                target_idx = best_balancer_idx
+                
             else:
-                target_idx = find_best_balancer(candidates_rest)
+                # [상황 2] 적합한 사람이 없다 (전원 포지션 겹침) -> 에이스 보호 발동
+                # 밸런스보다 '비극 방지'가 우선. 점수(Priority)가 가장 낮은 사람을 보냄.
+                # team_b는 점수 내림차순 정렬되어 있으므로 맨 뒤가 점수 꼴찌임.
+                target_idx = len(team_b) - 1
             
             # 이동 실행
             p_move = team_b.pop(target_idx)
