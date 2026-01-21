@@ -479,9 +479,9 @@ def calculate_score(level_str):
         if key in level_str: return score
     return 1
 
+# --- [알고리즘 함수 수정] 이름+날짜 기반 난수 (동기화 O, 매주 변동 O) ---
 def get_priority_score(player, global_history, global_hardship):
     name = player['이름']
-    target_pos = str(player['1순위']).strip()
     
     score = 50.0 
     reasons = ["기본(50)"]
@@ -501,7 +501,21 @@ def get_priority_score(player, global_history, global_hardship):
         score += hardship_score
         reasons.append(f"+마일리지({int(hardship_score)})")
         
-    score += random.random()
+    # [핵심 수정] 이름 + 게임일시를 섞어서 '이번 게임 전용' 고정 난수 생성
+    # 1. 현재 게임 날짜 가져오기 (없으면 'default')
+    game_info = get_current_game_info()
+    game_date = str(game_info.get('일시', 'default')) if game_info else 'default'
+    
+    # 2. 시드값 만들기 (이름_날짜)
+    seed_key = f"{name}_{game_date}"
+    
+    # 3. 이 시드값으로 고정된 난수 생성 (0.00 ~ 0.99)
+    # random.Random(seed).random()을 쓰면 전역 난수에 영향 주지 않고 독립적인 난수 생성 가능
+    fixed_random = random.Random(seed_key).random()
+    
+    # 소수점 2자리까지만 예쁘게 반영
+    score += round(fixed_random, 2)
+    
     return score, " ".join(reasons)
 
 # --- [알고리즘 수정 Ver 3.7.1] 3순위 고려 & 전 포지션 B팀 에이스 보호 ---
