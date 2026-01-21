@@ -1123,19 +1123,21 @@ with tab2:
             else:
                 df_final = pd.DataFrame(data_final)
                 
-                # 점수 정보 재계산 및 매핑
+                # [수정] 라운드별 점수 스냅샷 저장 (DB)
+                round_score_db = {} 
+                
                 if '이름' in df_final.columns:
+                    # 시뮬레이션을 돌려서 각 라운드 당시의 점수를 확보
                     temp_rounds = generate_vega_priority_schedule(df_final)
                     
-                    score_map = {}
-                    reason_map = {}
-                    for r in temp_rounds.values():
-                        for p in r[0] + r[1]: 
-                            score_map[p['이름']] = p.get('priority_score', 0)
-                            reason_map[p['이름']] = p.get('score_reason', '')
-                    
-                    df_final['priority_score'] = df_final['이름'].map(score_map)
-                    df_final['score_reason'] = df_final['이름'].map(reason_map)
+                    # 라운드별로 점수 저장 {1: {이름: 점수정보}, 2: ...}
+                    for r_idx, (team_a, team_b) in temp_rounds.items():
+                        round_score_db[r_idx] = {}
+                        for p in team_a + team_b:
+                            round_score_db[r_idx][p['이름']] = {
+                                'score': p.get('priority_score', 0),
+                                'reason': p.get('score_reason', '')
+                            }
                     
                     df_final['이름_masked'] = df_final['이름'].apply(anonymize_name)
                     if '이름' in df_final.columns and '연락처' in df_final.columns:
@@ -1144,11 +1146,10 @@ with tab2:
                 st.divider()
 
                 lineup_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
-                # [수정] 루프 데이터에 ("팀4", "확정4") 추가
+                
                 for i, (col_team, col_pos) in enumerate([("팀1", "확정1"), ("팀2", "확정2"), ("팀3", "확정3"), ("팀4", "확정4")], 1):
                     with lineup_tabs[i-1]:
                         if col_pos in df_final.columns and col_team in df_final.columns:
-                            # (이하 기존 로직 동일)
                             playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
                             
                             if not playing.empty:
@@ -1158,7 +1159,6 @@ with tab2:
                                     team_b_df = real_players[real_players[col_team]=="B팀"]
                                     count_a = len(team_a_df); count_b = len(team_b_df)
                                     
-                                    # 제외 포지션 계산
                                     def get_missing_pos(df_team, pos_col):
                                         if df_team.empty: return []
                                         current_pos = set(df_team[pos_col].unique())
@@ -1180,10 +1180,11 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                # 카드 디자인 출력 함수
+                                # [수정] 카드 디자인 출력 함수 (라운드별 점수 조회 적용)
                                 def display_player_card(row, team_color):
                                     pos = row[col_pos]
                                     name = row['이름_masked']
+                                    real_name = row['이름']
                                     wish = str(row.get('1순위', '')).strip()
                                     
                                     badge = ""
@@ -1192,8 +1193,13 @@ with tab2:
                                     elif pos == str(row.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
                                     else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
                                     
-                                    sc = row.get('priority_score', 0)
-                                    re_txt = row.get('score_reason', '')
+                                    # [핵심] 현재 라운드(i)에 맞는 점수 가져오기
+                                    sc = 0
+                                    re_txt = ""
+                                    if i in round_score_db and real_name in round_score_db[i]:
+                                        sc = round_score_db[i][real_name]['score']
+                                        re_txt = round_score_db[i][real_name]['reason']
+                                    
                                     score_html = format_score_html(sc, re_txt)
                                     
                                     st.markdown(f"""
@@ -1218,8 +1224,13 @@ with tab2:
                                 if not bench.empty:
                                     st.caption(f"🛌 **대기**")
                                     for _, r in bench.iterrows(): 
-                                        sc = r.get('priority_score', 0)
-                                        re_txt = r.get('score_reason', '')
+                                        # 대기자 점수도 라운드별로 조회
+                                        sc = 0
+                                        re_txt = ""
+                                        if i in round_score_db and r['이름'] in round_score_db[i]:
+                                            sc = round_score_db[i][r['이름']]['score']
+                                            re_txt = round_score_db[i][r['이름']]['reason']
+                                            
                                         st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
                                         st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
                         else:
