@@ -1399,7 +1399,7 @@ with tab2:
                                             with cols[idx]:
                                                 st.markdown(f"""
                                                 <div style="text-align: center; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 8px;">
-                                                    <div style="font-weight: bold; font-size: 0.9em;">{r['이름_masked']}</div>
+                                                    <div style="font-weight: bold; font-size: 0.9em; color: #333; margin-bottom: 2px;">{r['이름_masked']}</div>
                                                     <div style="font-size: 0.75em; color: #666; margin-bottom: 2px;">(희망: {r.get('1순위', '-')})</div>
                                                     <div style="font-size: 0.8em; color: #1976D2; font-weight: bold;">{sc:.2f}</div>
                                                 </div>
