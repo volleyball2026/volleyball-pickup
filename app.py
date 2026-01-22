@@ -1750,8 +1750,9 @@ with tab6:
                         # 이 라운드 시작 전 점수 계산 (화면 표시용)
                         score_map = {}
                         for p in base_players:
-                            sc, re = get_priority_score(p, d_hist, d_hard)
-                            score_map[p['이름']] = (sc, re)
+                            # [버그 수정] 변수명 re -> reason_val (모듈 충돌 방지)
+                            sc, reason_val = get_priority_score(p, d_hist, d_hard)
+                            score_map[p['이름']] = (sc, reason_val)
 
                         for _, row in df.iterrows():
                             p_name = row['이름']
