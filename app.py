@@ -480,6 +480,7 @@ def generate_kakao_text(df):
 
 # --- [UI 함수] 작전판(Court View) HTML 생성 ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
+# --- [UI 함수] 작전판(Court View) HTML 생성 (점수 상세 색상 복구 + 들여쓰기 방지) ---
 def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
     # 팀 색상 설정
     if team_type == "A팀":
@@ -507,41 +508,72 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
             name = row.get('이름_masked', row['이름'])
             real_name = row['이름']
             
+            # 점수 및 사유 가져오기
             score = 0
+            reason = ""
             if round_score_db and round_num:
                 if real_name in round_score_db.get(round_num, {}):
-                    score = round_score_db[round_num][real_name]['score']
+                    p_data = round_score_db[round_num][real_name]
+                    score = p_data['score']
+                    reason = p_data.get('reason', '')
             else:
                 score = row.get('priority_score', 0)
+                reason = row.get('score_reason', '')
                 
-            player_map[pos] = {"name": name, "score": score}
+            player_map[pos] = {"name": name, "score": score, "reason": reason}
 
-    # HTML 생성 헬퍼 (들여쓰기 문제 방지를 위해 한 줄로 결합)
+    # HTML 생성 헬퍼 (점수 색상 파싱 로직 포함)
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
             p_name = p_data['name']
             p_score = f"{p_data['score']:.2f}"
+            p_reason = p_data['reason']
+            
+            # [점수 내역 HTML 변환 로직]
+            # space로 분리하여 각 항목별 색상 적용
+            reason_items = p_reason.split()
+            formatted_reason = ""
+            for item in reason_items:
+                color = "#555" # 기본 회색
+                if item.startswith("+"): color = "#1976D2" # 파랑 (가산점)
+                elif item.startswith("-"): color = "#D32F2F" # 빨강 (감점)
+                elif "기본" in item: color = "#9E9E9E" # 연회색 (기본)
+                
+                # 작은 폰트로 줄바꿈 없이 나열
+                formatted_reason += f"<span style='color:{color}; margin-right:3px;'>{item}</span>"
+
             return (
                 f"<div style='background: white; border: 2px solid {border_color}; border-radius: 8px; "
-                f"padding: 4px; margin: 2px; width: 23%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); "
-                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 55px;'>"
-                f"<div style='font-size: 0.7em; font-weight: bold; color: #666; margin-bottom: 1px;'>{pos_name}</div>"
-                f"<div style='font-size: 0.85em; font-weight: 900; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%;'>{p_name}</div>"
-                f"<div style='font-size: 0.7em; color: #888;'>({p_score})</div>"
+                f"padding: 6px 4px; margin: 2px; width: 23%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); "
+                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 65px;'>"
+                
+                # 포지션명
+                f"<div style='font-size: 0.65em; font-weight: bold; color: #888; margin-bottom: 2px;'>{pos_name}</div>"
+                
+                # 이름
+                f"<div style='font-size: 0.9em; font-weight: 900; color: #000; margin-bottom: 2px; "
+                f"overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%;'>{p_name}</div>"
+                
+                # 총점 (굵게)
+                f"<div style='font-size: 0.75em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 3px;'>{p_score}</div>"
+                
+                # 상세 내역 (아주 작은 글씨로 색상 적용)
+                f"<div style='font-size: 0.6em; line-height: 1.1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
+                
                 f"</div>"
             )
         else:
             # 빈 자리
             return (
                 f"<div style='border: 2px dashed #ddd; border-radius: 8px; padding: 4px; margin: 2px; width: 23%; "
-                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 55px;'>"
+                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 65px;'>"
                 f"<div style='font-size: 0.7em; color: #aaa;'>{pos_name}</div>"
                 f"<div style='font-size: 0.75em; color: #ccc;'>(공석)</div>"
                 f"</div>"
             )
 
-    # 전체 보드 HTML 조립 (한 줄 문자열로 생성하여 마크다운 코드 블록 인식 방지)
+    # 전체 보드 HTML 조립
     board_html = (
         f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 8px; margin-bottom: 12px;'>"
         f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.9em; margin-bottom: 6px;'>{header_text}</div>"
