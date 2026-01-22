@@ -478,6 +478,95 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
+# --- [UI 함수] 작전판(Court View) HTML 생성 ---
+def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
+    # 팀 색상 설정
+    if team_type == "A팀":
+        bg_color = "#FFEBEE" # 연한 빨강 배경
+        border_color = "#D32F2F" # 진한 빨강 테두리
+        header_text = "🔴 A팀 (VEGA)"
+    else:
+        bg_color = "#E3F2FD" # 연한 파랑 배경
+        border_color = "#1976D2" # 진한 파랑 테두리
+        header_text = "🔵 B팀 (픽업)"
+
+    # 포지션별 배치 정의 (9인제 기준)
+    # Row 1: 네트 앞 (공격수/세터)
+    row1 = ["레프트", "속공", "세터", "라이트"]
+    # Row 2: 중간 (수비/보조)
+    row2 = ["앞차", "백차"]
+    # Row 3: 후위 (수비)
+    row3 = ["레프트백", "센터백", "라이트백"]
+
+    # 선수 데이터 매핑
+    player_map = {}
+    
+    # 1. 실제 뛰는 선수만 필터링
+    players = team_df[team_df[col_pos] != "대기"]
+    
+    for _, row in players.iterrows():
+        pos = str(row.get(col_pos, '')).strip()
+        name = row['이름_masked'] if '이름_masked' in row else row['이름']
+        real_name = row['이름']
+        
+        # 점수 가져오기 (DB 또는 컬럼)
+        score = 0
+        if round_score_db and round_num:
+            if real_name in round_score_db.get(round_num, {}):
+                score = round_score_db[round_num][real_name]['score']
+        else:
+            score = row.get('priority_score', 0)
+            
+        player_map[pos] = {"name": name, "score": score}
+
+    # HTML 생성 헬퍼
+    def make_player_html(pos_name):
+        p_data = player_map.get(pos_name)
+        if p_data:
+            p_name = p_data['name']
+            p_score = f"{p_data['score']:.2f}"
+            return f"""
+            <div style="background: white; border: 2px solid {border_color}; border-radius: 10px; padding: 5px; margin: 2px; width: 23%; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+                <div style="font-size: 0.75em; font-weight: bold; color: #555; margin-bottom: 2px;">{pos_name}</div>
+                <div style="font-size: 0.9em; font-weight: 900; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{p_name}</div>
+                <div style="font-size: 0.7em; color: #888;">({p_score})</div>
+            </div>
+            """
+        else:
+            # 빈 자리
+            return f"""
+            <div style="border: 2px dashed #ccc; border-radius: 10px; padding: 5px; margin: 2px; width: 23%; opacity: 0.5;">
+                <div style="font-size: 0.75em; color: #999;">{pos_name}</div>
+                <div style="font-size: 0.8em; color: #ccc;">(공석)</div>
+            </div>
+            """
+
+    # 전체 보드 HTML 조립
+    board_html = f"""
+    <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; padding: 10px; margin-bottom: 10px;">
+        <div style="text-align: center; font-weight: bold; color: {border_color}; margin-bottom: 8px;">{header_text}</div>
+        
+        <div style="display: flex; justify-content: space-around; margin-bottom: 8px;">
+            {make_player_html("레프트")}
+            {make_player_html("속공")}
+            {make_player_html("세터")}
+            {make_player_html("라이트")}
+        </div>
+        
+        <div style="display: flex; justify-content: center; gap: 40px; margin-bottom: 8px;">
+            {make_player_html("앞차")}
+            {make_player_html("백차")}
+        </div>
+        
+        <div style="display: flex; justify-content: space-around;">
+            {make_player_html("레프트백")}
+            {make_player_html("센터백")}
+            {make_player_html("라이트백")}
+        </div>
+    </div>
+    """
+    return board_html
+
 # --- [알고리즘] ---
 def calculate_score(level_str):
     for key, score in LEVEL_MAP.items():
@@ -1098,6 +1187,7 @@ with tab1:
             st.metric("현재 참가 인원", "0명")
             
 # --- 탭 2: 라인업 공개 ---
+# --- 탭 2: 라인업 공개 ---
 with tab2:
     # 1. 게임 종료 체크
     if not current_game or current_game.get('제목') == 'CLOSED':
@@ -1239,59 +1329,41 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                # 카드 디자인 출력 (리플레이된 정확한 점수 사용)
-                                def display_player_card(row, team_color):
-                                    pos = row[col_pos]
-                                    name = row['이름_masked']
-                                    real_name = row['이름']
-                                    wish = str(row.get('1순위', '')).strip()
+                                    # [수정] 작전판(Tactical Board)으로 출력
+                                    st.markdown("### 🏟️ Court View")
                                     
-                                    badge = ""
-                                    if pos == wish: badge = "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span>"
-                                    elif pos == str(row.get('2순위','')).strip(): badge = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span>"
-                                    elif pos == str(row.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
-                                    else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
+                                    # A팀 작전판
+                                    html_a = render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i)
+                                    st.markdown(html_a, unsafe_allow_html=True)
                                     
-                                    # [핵심] 리플레이 DB에서 점수 가져오기
-                                    sc = 0
-                                    re_txt = ""
-                                    if i in round_score_db and real_name in round_score_db[i]:
-                                        sc = round_score_db[i][real_name]['score']
-                                        re_txt = round_score_db[i][real_name]['reason']
+                                    # VS 구분선
+                                    st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
                                     
-                                    score_html = format_score_html(sc, re_txt)
-                                    
-                                    st.markdown(f"""
-                                    <div style='margin-bottom: 12px;'>
-                                        <div><strong>{pos}</strong>: {name} {badge} <span style='color:#888; font-size:0.8em;'>({row.get('레벨','')})</span></div>
-                                        {score_html}
-                                    </div>
-                                    """, unsafe_allow_html=True)
-
-                                c1, c2 = st.columns(2)
-                                with c1:
-                                    st.error(f"🔴 A팀 (VEGA)")
-                                    for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
-                                        display_player_card(r, "red")
-                                with c2:
-                                    st.info(f"🔵 B팀 (픽업)")
-                                    for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
-                                        display_player_card(r, "blue")
+                                    # B팀 작전판
+                                    html_b = render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i)
+                                    st.markdown(html_b, unsafe_allow_html=True)
                                 
-                                st.markdown("---")
+                                # 대기 인원 표시 (작전판 밑에 리스트로)
                                 bench = playing[playing[col_pos]=="대기"]
                                 if not bench.empty:
-                                    st.caption(f"🛌 **대기**")
-                                    for _, r in bench.iterrows(): 
+                                    st.divider()
+                                    st.caption(f"🛌 **대기 선수 (다음 세트 출전 1순위)**")
+                                    # 대기 선수는 가로로 나열
+                                    cols = st.columns(len(bench)) if len(bench) > 0 else []
+                                    for idx, (_, r) in enumerate(bench.iterrows()):
                                         sc = 0
-                                        re_txt = ""
-                                        real_name = r['이름']
-                                        if i in round_score_db and real_name in round_score_db[i]:
-                                            sc = round_score_db[i][real_name]['score']
-                                            re_txt = round_score_db[i][real_name]['reason']
-                                            
-                                        st.write(f"- {r['이름_masked']} (희망: {r.get('1순위', '')})")
-                                        st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
+                                        if i in round_score_db and r['이름'] in round_score_db[i]:
+                                            sc = round_score_db[i][r['이름']]['score']
+                                        
+                                        if idx < len(cols): # 컬럼 수 안전장치
+                                            with cols[idx]:
+                                                st.markdown(f"""
+                                                <div style="text-align: center; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 8px;">
+                                                    <div style="font-weight: bold; font-size: 0.9em;">{r['이름_masked']}</div>
+                                                    <div style="font-size: 0.75em; color: #666; margin-bottom: 2px;">(희망: {r.get('1순위', '-')})</div>
+                                                    <div style="font-size: 0.8em; color: #1976D2; font-weight: bold;">{sc:.2f}</div>
+                                                </div>
+                                                """, unsafe_allow_html=True)
                         else:
                             st.warning("아직 배정 정보가 없습니다.")
                             
@@ -1737,48 +1809,33 @@ with tab6:
                             st.progress(min(sum_a / max_possible, 1.0))
                             st.progress(min(sum_b / max_possible, 1.0))
 
-                        # --- 선수 카드 출력 (디자인 적용) ---
-                        c1, c2 = st.columns(2)
+                        # --- [수정] 관리자용 작전판 출력 ---
+                        # 관리자 데이터는 dict list 형태이므로 DataFrame으로 변환 후 작전판 함수 호출
+                        # assigned_pos 키를 사용하여 매핑
                         
-                        def display_admin_card(p, color):
-                            pos = p.get('assigned_pos', '대기')
-                            name = p['이름']
-                            lv = str(p.get('레벨', '입문')).split(' ')[0]
-                            wish = str(p.get('1순위', '')).strip()
-                            
-                            badge = ""
-                            if pos == wish: badge = "<span style='color:#1565C0; background-color:#E3F2FD; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>1순위</span>"
-                            elif pos == str(p.get('2순위','')).strip(): badge = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>2순위</span>"
-                            elif pos == str(p.get('3순위','')).strip(): badge = "<span style='color:#E65100; background-color:#FFF3E0; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>3순위</span>"
-                            else: badge = "<span style='color:#C62828; background-color:#FFEBEE; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em;'>무</span>"
-                            
-                            # [핵심] 점수 HTML 변환
-                            sc = p.get('priority_score', 0)
-                            re_txt = p.get('score_reason', '')
-                            score_html = format_score_html(sc, re_txt)
-                            
-                            st.markdown(f"""
-                            <div style='margin-bottom: 10px;'>
-                                <div><strong>{pos}</strong>: {name} {badge} <span style='color:gray; font-size:0.8em;'>({lv})</span></div>
-                                {score_html}
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                        with c1: 
-                            st.error(f"🔴 A팀 (VEGA)")
-                            for p in team_a: 
-                                if p['assigned_pos']!="대기": display_admin_card(p, "red")
-                        with c2: 
-                            st.info(f"🔵 B팀 (픽업)")
-                            for p in team_b: 
-                                if p['assigned_pos']!="대기": display_admin_card(p, "blue")
+                        st.markdown("### 🏟️ Court View")
                         
-                        st.markdown("---")
+                        df_a = pd.DataFrame(team_a)
+                        df_b = pd.DataFrame(team_b)
+                        
+                        html_a = render_tactical_board(df_a, "A팀", "assigned_pos")
+                        st.markdown(html_a, unsafe_allow_html=True)
+                        
+                        st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
+                        
+                        html_b = render_tactical_board(df_b, "B팀", "assigned_pos")
+                        st.markdown(html_b, unsafe_allow_html=True)
+                        
+                        # 대기 선수
                         bench_a = [p for p in team_a if p['assigned_pos']=="대기"]
                         bench_b = [p for p in team_b if p['assigned_pos']=="대기"]
-                        if bench_a or bench_b:
+                        all_bench = bench_a + bench_b
+                        
+                        if all_bench:
+                            st.divider()
                             st.caption("🛌 **대기 인원**")
-                            for p in bench_a + bench_b:
+                            # 관리자용 대기 명단은 리스트로 유지 (점수 디테일 확인용)
+                            for p in all_bench:
                                 sc = p.get('priority_score', 0)
                                 re_txt = p.get('score_reason', '')
                                 st.write(f"- {p['이름']} (희망: {p['1순위']})")
