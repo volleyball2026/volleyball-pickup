@@ -479,6 +479,7 @@ def generate_kakao_text(df):
     return text
 
 # --- [UI 함수] 작전판(Court View) HTML 생성 ---
+# --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
 def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
     # 팀 색상 설정
     if team_type == "A팀":
@@ -490,81 +491,79 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
         border_color = "#1976D2" # 진한 파랑 테두리
         header_text = "🔵 B팀 (픽업)"
 
-    # 포지션별 배치 정의 (9인제 기준)
-    # Row 1: 네트 앞 (공격수/세터)
+    # 포지션별 배치 정의
     row1 = ["레프트", "속공", "세터", "라이트"]
-    # Row 2: 중간 (수비/보조)
     row2 = ["앞차", "백차"]
-    # Row 3: 후위 (수비)
     row3 = ["레프트백", "센터백", "라이트백"]
 
     # 선수 데이터 매핑
     player_map = {}
     
-    # 1. 실제 뛰는 선수만 필터링
-    players = team_df[team_df[col_pos] != "대기"]
-    
-    for _, row in players.iterrows():
-        pos = str(row.get(col_pos, '')).strip()
-        name = row['이름_masked'] if '이름_masked' in row else row['이름']
-        real_name = row['이름']
+    if not team_df.empty and col_pos in team_df.columns:
+        players = team_df[team_df[col_pos] != "대기"]
         
-        # 점수 가져오기 (DB 또는 컬럼)
-        score = 0
-        if round_score_db and round_num:
-            if real_name in round_score_db.get(round_num, {}):
-                score = round_score_db[round_num][real_name]['score']
-        else:
-            score = row.get('priority_score', 0)
+        for _, row in players.iterrows():
+            pos = str(row.get(col_pos, '')).strip()
+            name = row.get('이름_masked', row['이름'])
+            real_name = row['이름']
             
-        player_map[pos] = {"name": name, "score": score}
+            score = 0
+            if round_score_db and round_num:
+                if real_name in round_score_db.get(round_num, {}):
+                    score = round_score_db[round_num][real_name]['score']
+            else:
+                score = row.get('priority_score', 0)
+                
+            player_map[pos] = {"name": name, "score": score}
 
-    # HTML 생성 헬퍼
+    # HTML 생성 헬퍼 (들여쓰기 문제 방지를 위해 한 줄로 결합)
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
             p_name = p_data['name']
             p_score = f"{p_data['score']:.2f}"
-            return f"""
-            <div style="background: white; border: 2px solid {border_color}; border-radius: 10px; padding: 5px; margin: 2px; width: 23%; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-                <div style="font-size: 0.75em; font-weight: bold; color: #555; margin-bottom: 2px;">{pos_name}</div>
-                <div style="font-size: 0.9em; font-weight: 900; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{p_name}</div>
-                <div style="font-size: 0.7em; color: #888;">({p_score})</div>
-            </div>
-            """
+            return (
+                f"<div style='background: white; border: 2px solid {border_color}; border-radius: 8px; "
+                f"padding: 4px; margin: 2px; width: 23%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); "
+                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 55px;'>"
+                f"<div style='font-size: 0.7em; font-weight: bold; color: #666; margin-bottom: 1px;'>{pos_name}</div>"
+                f"<div style='font-size: 0.85em; font-weight: 900; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%;'>{p_name}</div>"
+                f"<div style='font-size: 0.7em; color: #888;'>({p_score})</div>"
+                f"</div>"
+            )
         else:
             # 빈 자리
-            return f"""
-            <div style="border: 2px dashed #ccc; border-radius: 10px; padding: 5px; margin: 2px; width: 23%; opacity: 0.5;">
-                <div style="font-size: 0.75em; color: #999;">{pos_name}</div>
-                <div style="font-size: 0.8em; color: #ccc;">(공석)</div>
-            </div>
-            """
+            return (
+                f"<div style='border: 2px dashed #ddd; border-radius: 8px; padding: 4px; margin: 2px; width: 23%; "
+                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 55px;'>"
+                f"<div style='font-size: 0.7em; color: #aaa;'>{pos_name}</div>"
+                f"<div style='font-size: 0.75em; color: #ccc;'>(공석)</div>"
+                f"</div>"
+            )
 
-    # 전체 보드 HTML 조립
-    board_html = f"""
-    <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; padding: 10px; margin-bottom: 10px;">
-        <div style="text-align: center; font-weight: bold; color: {border_color}; margin-bottom: 8px;">{header_text}</div>
+    # 전체 보드 HTML 조립 (한 줄 문자열로 생성하여 마크다운 코드 블록 인식 방지)
+    board_html = (
+        f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 8px; margin-bottom: 12px;'>"
+        f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.9em; margin-bottom: 6px;'>{header_text}</div>"
         
-        <div style="display: flex; justify-content: space-around; margin-bottom: 8px;">
-            {make_player_html("레프트")}
-            {make_player_html("속공")}
-            {make_player_html("세터")}
-            {make_player_html("라이트")}
-        </div>
+        # Row 1
+        f"<div style='display: flex; justify-content: space-around; margin-bottom: 6px;'>"
+        f"{make_player_html('레프트')}{make_player_html('속공')}{make_player_html('세터')}{make_player_html('라이트')}"
+        f"</div>"
         
-        <div style="display: flex; justify-content: center; gap: 40px; margin-bottom: 8px;">
-            {make_player_html("앞차")}
-            {make_player_html("백차")}
-        </div>
+        # Row 2
+        f"<div style='display: flex; justify-content: center; gap: 30px; margin-bottom: 6px;'>"
+        f"{make_player_html('앞차')}{make_player_html('백차')}"
+        f"</div>"
         
-        <div style="display: flex; justify-content: space-around;">
-            {make_player_html("레프트백")}
-            {make_player_html("센터백")}
-            {make_player_html("라이트백")}
-        </div>
-    </div>
-    """
+        # Row 3
+        f"<div style='display: flex; justify-content: space-around;'>"
+        f"{make_player_html('레프트백')}{make_player_html('센터백')}{make_player_html('라이트백')}"
+        f"</div>"
+        
+        f"</div>"
+    )
+    
     return board_html
 
 # --- [알고리즘] ---
