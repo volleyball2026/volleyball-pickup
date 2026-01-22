@@ -481,6 +481,7 @@ def generate_kakao_text(df):
 # --- [UI 함수] 작전판(Court View) HTML 생성 ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (점수 상세 색상 복구 + 들여쓰기 방지) ---
+# --- [UI 함수] 작전판(Court View) HTML 생성 (모바일 최적화: 뱃지 적용 & 줄바꿈 허용) ---
 def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
     # 팀 색상 설정
     if team_type == "A팀":
@@ -505,6 +506,7 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
         
         for _, row in players.iterrows():
             pos = str(row.get(col_pos, '')).strip()
+            # 마스킹된 이름 사용 (없으면 원본)
             name = row.get('이름_masked', row['이름'])
             real_name = row['이름']
             
@@ -522,7 +524,7 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
                 
             player_map[pos] = {"name": name, "score": score, "reason": reason}
 
-    # HTML 생성 헬퍼 (점수 색상 파싱 로직 포함)
+    # HTML 생성 헬퍼 (모바일 최적화 적용)
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
@@ -530,61 +532,68 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
             p_score = f"{p_data['score']:.2f}"
             p_reason = p_data['reason']
             
-            # [점수 내역 HTML 변환 로직]
-            # space로 분리하여 각 항목별 색상 적용
+            # [수정 1] VEGA 뱃지 처리
+            vega_badge = ""
+            display_name = p_name
+            if "[VEGA]" in p_name:
+                display_name = p_name.replace("[VEGA]", "").strip()
+                # 파란색 'V' 뱃지 생성 (작고 깔끔하게)
+                vega_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>V</span>"
+            
+            # [점수 내역 색상 적용]
             reason_items = p_reason.split()
             formatted_reason = ""
             for item in reason_items:
-                color = "#555" # 기본 회색
-                if item.startswith("+"): color = "#1976D2" # 파랑 (가산점)
-                elif item.startswith("-"): color = "#D32F2F" # 빨강 (감점)
-                elif "기본" in item: color = "#9E9E9E" # 연회색 (기본)
-                
-                # 작은 폰트로 줄바꿈 없이 나열
-                formatted_reason += f"<span style='color:{color}; margin-right:3px;'>{item}</span>"
+                color = "#555"
+                if item.startswith("+"): color = "#1976D2"
+                elif item.startswith("-"): color = "#D32F2F"
+                elif "기본" in item: color = "#9E9E9E"
+                formatted_reason += f"<span style='color:{color}; margin-right:2px;'>{item}</span>"
 
             return (
-                f"<div style='background: white; border: 2px solid {border_color}; border-radius: 8px; "
-                f"padding: 6px 4px; margin: 2px; width: 23%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); "
-                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 65px;'>"
+                f"<div style='background: white; border: 1px solid {border_color}; border-radius: 6px; "
+                f"padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); " # 여백 최소화, 너비 최대화
+                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
                 
-                # 포지션명
-                f"<div style='font-size: 0.65em; font-weight: bold; color: #888; margin-bottom: 2px;'>{pos_name}</div>"
+                # 포지션명 (폰트 축소)
+                f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px;'>{pos_name}</div>"
                 
-                # 이름
-                f"<div style='font-size: 0.9em; font-weight: 900; color: #000; margin-bottom: 2px; "
-                f"overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%;'>{p_name}</div>"
+                # 이름 (뱃지 포함, 줄바꿈 허용, 폰트 조정)
+                f"<div style='font-size: 0.8em; font-weight: 800; color: #000; margin-bottom: 1px; "
+                f"line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>" # 핵심: 줄바꿈 허용
+                f"{vega_badge}{display_name}"
+                f"</div>"
                 
-                # 총점 (굵게)
-                f"<div style='font-size: 0.75em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 3px;'>{p_score}</div>"
+                # 총점 (폰트 축소)
+                f"<div style='font-size: 0.7em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 2px;'>{p_score}</div>"
                 
-                # 상세 내역 (아주 작은 글씨로 색상 적용)
-                f"<div style='font-size: 0.6em; line-height: 1.1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
+                # 상세 내역 (아주 작은 폰트)
+                f"<div style='font-size: 0.5em; line-height: 1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
                 
                 f"</div>"
             )
         else:
-            # 빈 자리
+            # 빈 자리 (스타일 맞춤)
             return (
-                f"<div style='border: 2px dashed #ddd; border-radius: 8px; padding: 4px; margin: 2px; width: 23%; "
-                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 65px;'>"
-                f"<div style='font-size: 0.7em; color: #aaa;'>{pos_name}</div>"
-                f"<div style='font-size: 0.75em; color: #ccc;'>(공석)</div>"
+                f"<div style='border: 1px dashed #ddd; border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; "
+                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
+                f"<div style='font-size: 0.55em; color: #aaa;'>{pos_name}</div>"
+                f"<div style='font-size: 0.65em; color: #ccc;'>(공석)</div>"
                 f"</div>"
             )
 
     # 전체 보드 HTML 조립
     board_html = (
-        f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 8px; margin-bottom: 12px;'>"
-        f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.9em; margin-bottom: 6px;'>{header_text}</div>"
+        f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 10px; padding: 6px 2px; margin-bottom: 10px;'>"
+        f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.85em; margin-bottom: 4px;'>{header_text}</div>"
         
         # Row 1
-        f"<div style='display: flex; justify-content: space-around; margin-bottom: 6px;'>"
+        f"<div style='display: flex; justify-content: space-around; margin-bottom: 4px;'>"
         f"{make_player_html('레프트')}{make_player_html('속공')}{make_player_html('세터')}{make_player_html('라이트')}"
         f"</div>"
         
         # Row 2
-        f"<div style='display: flex; justify-content: center; gap: 30px; margin-bottom: 6px;'>"
+        f"<div style='display: flex; justify-content: center; gap: 15px; margin-bottom: 4px;'>" # 간격 축소
         f"{make_player_html('앞차')}{make_player_html('백차')}"
         f"</div>"
         
