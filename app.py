@@ -1250,7 +1250,6 @@ with tab1:
             st.metric("현재 참가 인원", "0명")
             
 # --- 탭 2: 라인업 공개 ---
-# --- 탭 2: 라인업 공개 ---
 with tab2:
     # 1. 게임 종료 체크
     if not current_game or current_game.get('제목') == 'CLOSED':
@@ -1296,7 +1295,6 @@ with tab2:
                 df_final = pd.DataFrame(data_final)
                 
                 # [수정] 점수 역추적 리플레이 로직 (Replay Logic)
-                # 시뮬레이션(랜덤)을 돌리는 게 아니라, 저장된 확정 결과를 바탕으로 점수를 정확히 계산함
                 
                 round_score_db = {}
                 d_hist = {p['이름']: 0 for p in df_final.to_dict('records')}
@@ -1311,9 +1309,9 @@ with tab2:
                     for _, row in df_final.iterrows():
                         nm = row['이름']
                         p_data = row.to_dict()
-                        # 현재까지의 누적치(d_hist, d_hard)를 반영해 점수 계산
-                        sc, re = get_priority_score(p_data, d_hist, d_hard)
-                        round_score_db[r][nm] = {'score': sc, 'reason': re}
+                        # [버그 수정] 변수명 re -> reason_val 로 변경 (모듈 충돌 방지)
+                        sc, reason_val = get_priority_score(p_data, d_hist, d_hard)
+                        round_score_db[r][nm] = {'score': sc, 'reason': reason_val}
                     
                     # 2. (현재 라운드 결과) 반영 -> 다음 라운드를 위한 누적치 업데이트
                     if col_pos in df_final.columns:
@@ -1323,7 +1321,6 @@ with tab2:
                             
                             if not assigned: continue
                             
-                            # 매치 타입 판별
                             w1 = str(row.get('1순위', '')).strip()
                             w2 = str(row.get('2순위', '')).strip()
                             w3 = str(row.get('3순위', '')).strip()
@@ -1334,7 +1331,6 @@ with tab2:
                             elif assigned == w2: match_type = '2nd'
                             elif assigned == w3: match_type = '3rd'
                             
-                            # 점수 업데이트 (알고리즘과 동일한 규칙 적용)
                             if match_type == '1st': d_hist[nm] += 1
                             
                             pts = 0
@@ -1342,7 +1338,6 @@ with tab2:
                             elif match_type == '3rd': pts = 5
                             elif match_type == '2nd': pts = 3
                             elif match_type == 'random':
-                                # 3순위까지 다 썼는지 확인
                                 if w1 and w2 and w3 and w1!='선택 안함' and w2!='선택 안함' and w3!='선택 안함':
                                     pts = 5
                                 else:
@@ -1371,6 +1366,7 @@ with tab2:
                                     team_b_df = real_players[real_players[col_team]=="B팀"]
                                     count_a = len(team_a_df); count_b = len(team_b_df)
                                     
+                                    # (제외 포지션 계산 생략 - 함수 호출 유지)
                                     def get_missing_pos(df_team, pos_col):
                                         if df_team.empty: return []
                                         current_pos = set(df_team[pos_col].unique())
@@ -1392,33 +1388,29 @@ with tab2:
                                         else: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
                                     st.info(info_msg)
 
-                                    # [수정] 작전판(Tactical Board)으로 출력
+                                    # [작전판 출력]
                                     st.markdown("### 🏟️ Court View")
                                     
-                                    # A팀 작전판
                                     html_a = render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i)
                                     st.markdown(html_a, unsafe_allow_html=True)
                                     
-                                    # VS 구분선
                                     st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
                                     
-                                    # B팀 작전판
                                     html_b = render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i)
                                     st.markdown(html_b, unsafe_allow_html=True)
                                 
-                                # 대기 인원 표시 (작전판 밑에 리스트로)
+                                # 대기 인원
                                 bench = playing[playing[col_pos]=="대기"]
                                 if not bench.empty:
                                     st.divider()
                                     st.caption(f"🛌 **대기 선수 (다음 세트 출전 1순위)**")
-                                    # 대기 선수는 가로로 나열
                                     cols = st.columns(len(bench)) if len(bench) > 0 else []
                                     for idx, (_, r) in enumerate(bench.iterrows()):
                                         sc = 0
                                         if i in round_score_db and r['이름'] in round_score_db[i]:
                                             sc = round_score_db[i][r['이름']]['score']
                                         
-                                        if idx < len(cols): # 컬럼 수 안전장치
+                                        if idx < len(cols):
                                             with cols[idx]:
                                                 st.markdown(f"""
                                                 <div style="text-align: center; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 8px;">
