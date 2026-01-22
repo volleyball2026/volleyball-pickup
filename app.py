@@ -482,6 +482,7 @@ def generate_kakao_text(df):
 # --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (점수 상세 색상 복구 + 들여쓰기 방지) ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (모바일 최적화: 뱃지 적용 & 줄바꿈 허용) ---
+# --- [UI 함수] 작전판(Court View) HTML 생성 (순위 뱃지 복구 + 모바일 최적화) ---
 def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
     # 팀 색상 설정
     if team_type == "A팀":
@@ -506,7 +507,6 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
         
         for _, row in players.iterrows():
             pos = str(row.get(col_pos, '')).strip()
-            # 마스킹된 이름 사용 (없으면 원본)
             name = row.get('이름_masked', row['이름'])
             real_name = row['이름']
             
@@ -521,25 +521,46 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
             else:
                 score = row.get('priority_score', 0)
                 reason = row.get('score_reason', '')
+            
+            # [NEW] 순위 정보 확인 (뱃지용)
+            w1 = str(row.get('1순위', '')).strip()
+            w2 = str(row.get('2순위', '')).strip()
+            w3 = str(row.get('3순위', '')).strip()
+            
+            rank_badge = "random" # 기본값: 무 (랜덤)
+            if pos == w1: rank_badge = "1st"
+            elif pos == w2: rank_badge = "2nd"
+            elif pos == w3: rank_badge = "3rd"
                 
-            player_map[pos] = {"name": name, "score": score, "reason": reason}
+            player_map[pos] = {"name": name, "score": score, "reason": reason, "rank": rank_badge}
 
-    # HTML 생성 헬퍼 (모바일 최적화 적용)
+    # HTML 생성 헬퍼
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
             p_name = p_data['name']
             p_score = f"{p_data['score']:.2f}"
             p_reason = p_data['reason']
+            p_rank = p_data['rank']
             
-            # [수정 1] VEGA 뱃지 처리
+            # [VEGA 뱃지]
             vega_badge = ""
             display_name = p_name
             if "[VEGA]" in p_name:
                 display_name = p_name.replace("[VEGA]", "").strip()
-                # 파란색 'V' 뱃지 생성 (작고 깔끔하게)
                 vega_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>V</span>"
             
+            # [NEW] 순위 뱃지 생성
+            rank_html = ""
+            if p_rank == "1st":
+                rank_html = "<span style='color:#1565C0; background-color:#E3F2FD; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>1순위</span>"
+            elif p_rank == "2nd":
+                rank_html = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>2순위</span>"
+            elif p_rank == "3rd":
+                rank_html = "<span style='color:#EF6C00; background-color:#FFF3E0; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>3순위</span>"
+            else:
+                rank_html = "<span style='color:#C62828; background-color:#FFEBEE; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>무</span>"
+
             # [점수 내역 색상 적용]
             reason_items = p_reason.split()
             formatted_reason = ""
@@ -552,28 +573,30 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
 
             return (
                 f"<div style='background: white; border: 1px solid {border_color}; border-radius: 6px; "
-                f"padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); " # 여백 최소화, 너비 최대화
+                f"padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); "
                 f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
                 
-                # 포지션명 (폰트 축소)
-                f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px;'>{pos_name}</div>"
+                # 포지션명 + 순위 뱃지 (한 줄에 표시)
+                f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px; white-space: nowrap;'>"
+                f"{pos_name}{rank_html}"
+                f"</div>"
                 
-                # 이름 (뱃지 포함, 줄바꿈 허용, 폰트 조정)
+                # 이름
                 f"<div style='font-size: 0.8em; font-weight: 800; color: #000; margin-bottom: 1px; "
-                f"line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>" # 핵심: 줄바꿈 허용
+                f"line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>"
                 f"{vega_badge}{display_name}"
                 f"</div>"
                 
-                # 총점 (폰트 축소)
+                # 총점
                 f"<div style='font-size: 0.7em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 2px;'>{p_score}</div>"
                 
-                # 상세 내역 (아주 작은 폰트)
+                # 상세 내역
                 f"<div style='font-size: 0.5em; line-height: 1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
                 
                 f"</div>"
             )
         else:
-            # 빈 자리 (스타일 맞춤)
+            # 빈 자리
             return (
                 f"<div style='border: 1px dashed #ddd; border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; "
                 f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
@@ -593,7 +616,7 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
         f"</div>"
         
         # Row 2
-        f"<div style='display: flex; justify-content: center; gap: 15px; margin-bottom: 4px;'>" # 간격 축소
+        f"<div style='display: flex; justify-content: center; gap: 15px; margin-bottom: 4px;'>"
         f"{make_player_html('앞차')}{make_player_html('백차')}"
         f"</div>"
         
