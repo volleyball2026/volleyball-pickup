@@ -1732,17 +1732,17 @@ with tab6:
                     d_hist = {p['이름']: 0 for p in base_players}
                     d_hard = {p['이름']: 0 for p in base_players}
                     
-                    # [수정] range(1, 4) -> range(1, 5)로 변경 (복구 시에도 4라운드 확인)
+                    # [수정] range(1, 4) -> range(1, 5)로 변경
                     for r in range(1, 5):
                         col_team = f"팀{r}"
                         col_pos = f"확정{r}"
                         team_a = []
                         team_b = []
                         
-                        # 이 라운드 시작 전 점수 계산 (화면 표시용)
+                        # 이 라운드 시작 전 점수 계산
                         score_map = {}
                         for p in base_players:
-                            # [버그 수정] 변수명 re -> reason_val (모듈 충돌 방지)
+                            # [버그 수정] 변수명 re -> reason_val 로 변경
                             sc, reason_val = get_priority_score(p, d_hist, d_hard)
                             score_map[p['이름']] = (sc, reason_val)
 
@@ -1775,9 +1775,9 @@ with tab6:
                             
                             if team_val == "A팀": team_a.append(p_data)
                             elif team_val == "B팀": team_b.append(p_data)
-                            elif assigned == "대기": team_b.append(p_data) # 임시
+                            elif assigned == "대기": team_b.append(p_data)
                             
-                            # 점수 누적 (다음 라운드용)
+                            # 점수 누적
                             if match_type == '1st': d_hist[p_name] += 1
                             
                             if match_type == 'wait': d_hard[p_name] += 10
@@ -1795,7 +1795,6 @@ with tab6:
                     
            # [결과 표시]
             if 'fair_results' in st.session_state:
-                # 1. 데이터프레임 반영
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
@@ -1808,19 +1807,15 @@ with tab6:
                 for idx, row in df.iterrows():
                     name = row['이름']
                     if name in schedule_map:
-                        # [수정] range(1, 4) -> range(1, 5) (데이터프레임에 팀4, 확정4 주입)
                         for r in range(1, 5): 
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
-                # 2. 화면 출력
-                # [수정] 4번째 탭 추가
                 r_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 팀 밸런스 계산
                         def calculate_team_sum(team_list):
                             total = 0
                             for p in team_list:
@@ -1834,7 +1829,6 @@ with tab6:
                         count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                         count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
                         
-                        # 제외 포지션 확인
                         def get_missing_pos_list(player_list):
                             current_pos = set()
                             for p in player_list:
@@ -1853,7 +1847,6 @@ with tab6:
 
                         st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}** (🔴A제외: {miss_txt_a} | 🔵B제외: {miss_txt_b})")
                         
-                        # 점수 바
                         b_col1, b_col2 = st.columns([1, 4])
                         with b_col1:
                             diff = sum_a - sum_b
@@ -1865,10 +1858,7 @@ with tab6:
                             st.progress(min(sum_a / max_possible, 1.0))
                             st.progress(min(sum_b / max_possible, 1.0))
 
-                        # --- [수정] 관리자용 작전판 출력 ---
-                        # 관리자 데이터는 dict list 형태이므로 DataFrame으로 변환 후 작전판 함수 호출
-                        # assigned_pos 키를 사용하여 매핑
-                        
+                        # --- 관리자용 작전판 출력 ---
                         st.markdown("### 🏟️ Court View")
                         
                         df_a = pd.DataFrame(team_a)
@@ -1890,7 +1880,7 @@ with tab6:
                         if all_bench:
                             st.divider()
                             st.caption("🛌 **대기 인원**")
-                            # 관리자용 대기 명단은 리스트로 유지 (점수 디테일 확인용)
+                            # 관리자용 대기 명단은 리스트로 유지
                             for p in all_bench:
                                 sc = p.get('priority_score', 0)
                                 re_txt = p.get('score_reason', '')
@@ -1899,7 +1889,6 @@ with tab6:
 
             st.divider()
             st.subheader("🛠️ 결과 수정 및 확정")
-            # [수정] 편집 컬럼에 팀4, 확정4 추가
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "팀4", "확정4", "입금", "비고"]
             edited_df = st.data_editor(df[cols], hide_index=True, num_rows="dynamic")
             
