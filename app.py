@@ -10,6 +10,42 @@ import time
 import altair as alt
 import plotly.graph_objects as go 
 
+# --- [UI 디자인] 모바일 최적화 CSS ---
+st.markdown("""
+    <style>
+        /* 1. 상단 헤더 숨기기 (햄버거 메뉴는 남김) */
+        header {visibility: hidden;}
+        
+        /* 2. 메인 콘텐츠 여백 최소화 (모바일 꽉 찬 화면) */
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 5rem !important; /* 하단 여백 확보 */
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        
+        /* 3. 탭 버튼 디자인 (앱 네비게이션처럼) */
+        button[data-baseweb="tab"] {
+            height: 3rem;
+            min-width: 50px;
+            font-size: 0.8rem;
+        }
+        
+        /* 4. 버튼이나 입력창 모바일 터치 최적화 */
+        div.stButton > button:first-child {
+            width: 100%;
+            border-radius: 12px;
+            height: 3em;
+        }
+        
+        /* 5. 작전판 등 컨테이너 그림자 효과 */
+        .stExpander {
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-radius: 10px;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
