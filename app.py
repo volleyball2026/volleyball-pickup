@@ -1019,7 +1019,7 @@ def generate_vega_priority_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 스타일)
+# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조)
 st.markdown("""
     <style>
         /* 1. 상단 헤더 숨기기 & 여백 조정 */
@@ -1041,43 +1041,72 @@ st.markdown("""
 
         /* 3. 탭 리스트: 가로 스크롤 활성화 */
         div[data-baseweb="tab-list"] {
-            gap: 8px; /* 버튼 사이 간격 */
-            overflow-x: auto; /* 가로 스크롤 허용 */
-            flex-wrap: nowrap; /* 줄바꿈 금지 */
-            white-space: nowrap; 
-            scrollbar-width: none; /* 스크롤바 숨김 (Firefox) */
-            padding-bottom: 5px; /* 하단 여백 */
+            gap: 8px;
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            scrollbar-width: none;
+            padding-bottom: 5px;
+            padding-left: 5px; /* 좌측 여백 */
         }
-        /* 크롬/사파리 스크롤바 숨김 */
-        div[data-baseweb="tab-list"]::-webkit-scrollbar {
-            display: none; 
-        }
+        div[data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
 
-        /* 4. 개별 탭 버튼 디자인 (알약 모양) */
+        /* 4. 기본 탭 버튼 디자인 (알약 모양) */
         button[data-baseweb="tab"] {
             height: 36px;
             min-height: 36px;
-            border-radius: 18px !important; /* 둥근 모서리 */
-            padding: 0 16px !important;     /* 좌우 여백 확보 */
-            background-color: #f7f7f7;      /* 기본 배경: 연한 회색 */
-            border: 1px solid #eee;         /* 테두리 */
-            color: #666;                    /* 기본 글자색 */
-            font-size: 14px !important;     /* 글자 크기 키움 */
-            flex: 0 0 auto;                 /* 크기 자동 조절 방지 (찌그러짐 방지) */
+            border-radius: 18px !important;
+            padding: 0 16px !important;
+            background-color: #f7f7f7;
+            border: 1px solid #eee;
+            color: #666;
+            font-size: 14px !important;
+            flex: 0 0 auto;
         }
 
-        /* 5. 선택된 탭 강조 스타일 */
-        button[data-baseweb="tab"][aria-selected="true"] {
-            background-color: #E3F2FD !important; /* 선택 배경: 연한 파랑 */
-            color: #1565C0 !important;            /* 선택 글자: 진한 파랑 */
-            border-color: #1565C0 !important;     /* 선택 테두리 */
+        /* [핵심] 5. '참가 신청' 탭(2번째)만 특별 강조! */
+        button[data-baseweb="tab"]:nth-of-type(2) {
+            background-color: #FFF3E0 !important; /* 연한 주황 배경 */
+            color: #E65100 !important;             /* 진한 주황 글씨 */
+            border: 1px solid #FF9800 !important;  /* 주황 테두리 */
+            font-weight: bold !important;
+        }
+        /* '참가 신청' 탭이 선택되었을 때 */
+        button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
+            background-color: #FF9800 !important; /* 쨍한 주황 배경 */
+            color: white !important;              /* 흰색 글씨 */
+            border: none !important;
+        }
+
+        /* 6. 나머지 탭 선택 스타일 (파란색) */
+        button[data-baseweb="tab"][aria-selected="true"]:not(:nth-of-type(2)) {
+            background-color: #E3F2FD !important;
+            color: #1565C0 !important;
+            border-color: #1565C0 !important;
             font-weight: bold;
         }
         
-        /* 6. 탭 내부 텍스트 (마크다운) 여백 제거 */
-        button[data-baseweb="tab"] p {
-            margin: 0;
+        /* 7. 탭 내부 텍스트 여백 제거 */
+        button[data-baseweb="tab"] p { margin: 0; }
+
+        /* [핵심] 8. 신청하기 버튼 (폼 제출 버튼) 강조 */
+        /* '신청하기' 버튼이 포함된 폼 내부의 버튼을 타겟팅 */
+        div[data-testid="stForm"] button[kind="secondaryFormSubmit"] {
+            background-color: #1565C0 !important; /* 진한 파랑 */
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 1.1rem !important;
+            font-weight: 800 !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2) !important; /* 그림자 효과 */
+            transition: all 0.2s ease-in-out;
+            width: 100% !important; /* 꽉 차게 */
         }
+        div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:active {
+            transform: scale(0.98); /* 눌렀을 때 살짝 들어가는 효과 */
+        }
+
     </style>
 """, unsafe_allow_html=True)
 
@@ -1102,7 +1131,16 @@ with st.sidebar:
     else:
         st.error("❌ 서버 연결 실패")
 
-st.title("🏐 여순광 배구 픽업게임 매니저")
+st.markdown("""
+<div style='display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 10px 0;'>
+    <div style='font-size: 2.8rem; line-height: 1;'>🏐</div>
+    <div style='display: flex; flex-direction: column;'>
+        <div style='font-size: 1.1rem; font-weight: bold; color: #666; margin-bottom: -2px;'>여순광 배구 픽업</div>
+        <div style='font-size: 1.7rem; font-weight: 900; color: #222; line-height: 1.2;'>게임 매니저</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 current_game = get_current_game_info()
 
 # [수정] 탭 목록에 '경기 영상' 추가
