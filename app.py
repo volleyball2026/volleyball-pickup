@@ -9,6 +9,8 @@ import re
 import time
 import altair as alt
 import plotly.graph_objects as go 
+import base64  
+import os
 
 # --- [UI 디자인] 모바일 최적화 CSS ---
 st.markdown("""
