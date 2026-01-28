@@ -1019,14 +1019,64 @@ def generate_vega_priority_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
+# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 스타일)
 st.markdown("""
     <style>
+        /* 1. 상단 헤더 숨기기 & 여백 조정 */
+        header {visibility: hidden;}
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 5rem !important;
+        }
+
+        /* 2. 탭 네비게이션 바 고정 (Sticky) */
         div[data-testid="stTabsNav"] {
             position: sticky;
             top: 0;
             z-index: 999;
             background-color: white;
-            padding-top: 1rem;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* 3. 탭 리스트: 가로 스크롤 활성화 */
+        div[data-baseweb="tab-list"] {
+            gap: 8px; /* 버튼 사이 간격 */
+            overflow-x: auto; /* 가로 스크롤 허용 */
+            flex-wrap: nowrap; /* 줄바꿈 금지 */
+            white-space: nowrap; 
+            scrollbar-width: none; /* 스크롤바 숨김 (Firefox) */
+            padding-bottom: 5px; /* 하단 여백 */
+        }
+        /* 크롬/사파리 스크롤바 숨김 */
+        div[data-baseweb="tab-list"]::-webkit-scrollbar {
+            display: none; 
+        }
+
+        /* 4. 개별 탭 버튼 디자인 (알약 모양) */
+        button[data-baseweb="tab"] {
+            height: 36px;
+            min-height: 36px;
+            border-radius: 18px !important; /* 둥근 모서리 */
+            padding: 0 16px !important;     /* 좌우 여백 확보 */
+            background-color: #f7f7f7;      /* 기본 배경: 연한 회색 */
+            border: 1px solid #eee;         /* 테두리 */
+            color: #666;                    /* 기본 글자색 */
+            font-size: 14px !important;     /* 글자 크기 키움 */
+            flex: 0 0 auto;                 /* 크기 자동 조절 방지 (찌그러짐 방지) */
+        }
+
+        /* 5. 선택된 탭 강조 스타일 */
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background-color: #E3F2FD !important; /* 선택 배경: 연한 파랑 */
+            color: #1565C0 !important;            /* 선택 글자: 진한 파랑 */
+            border-color: #1565C0 !important;     /* 선택 테두리 */
+            font-weight: bold;
+        }
+        
+        /* 6. 탭 내부 텍스트 (마크다운) 여백 제거 */
+        button[data-baseweb="tab"] p {
+            margin: 0;
         }
     </style>
 """, unsafe_allow_html=True)
