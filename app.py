@@ -1133,12 +1133,27 @@ with st.sidebar:
     else:
         st.error("❌ 서버 연결 실패")
 
-st.markdown("""
-<div style='display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 10px 0;'>
-    <div style='font-size: 2.8rem; line-height: 1;'>🏐</div>
+# --- [UI] 메인 타이틀 (이미지 적용) ---
+def get_img_base64(file_path):
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+img_file = "mikasa.png"  # 파일명이 정확해야 합니다!
+
+if os.path.exists(img_file):
+    img_b64 = get_img_base64(img_file)
+    # 이미지 크기(width/height)를 조절하고, 둥글게(border-radius) 만듭니다.
+    icon_html = f'<img src="data:image/jpeg;base64,{img_b64}" style="width: 65px; height: 65px; border-radius: 50%; box-shadow: 0 4px 6px rgba(0,0,0,0.15); object-fit: cover;">'
+else:
+    icon_html = "<div style='font-size: 3.5rem; line-height: 1;'>🏐</div>"
+
+st.markdown(f"""
+<div style='display: flex; align-items: center; gap: 15px; margin-bottom: 25px; padding-top: 10px;'>
+    <div style='display:flex; align-items:center;'>{icon_html}</div>
     <div style='display: flex; flex-direction: column;'>
-        <div style='font-size: 1.1rem; font-weight: bold; color: #666; margin-bottom: -2px;'>여순광 배구 픽업</div>
-        <div style='font-size: 1.7rem; font-weight: 900; color: #222; line-height: 1.2;'>게임 매니저</div>
+        <div style='font-size: 1.1rem; font-weight: bold; color: #777; letter-spacing: -0.5px; margin-bottom: -4px;'>여순광 배구 픽업</div>
+        <div style='font-size: 1.9rem; font-weight: 900; color: #222; line-height: 1.1;'>게임 매니저</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
