@@ -680,89 +680,54 @@ def get_priority_score(player, global_history, global_hardship):
 # --- [알고리즘 수정 Ver 3.8] 점수 절대 우선 배정 (고득점자 깡패 모드) ---
 
 # --- [알고리즘 수정 Ver 3.9.3] 유니크 포지션 보호 (슈퍼 세이브) ---
+# --- [알고리즘 수정 Ver 3.9.7] 9인제 포지션 고정 (속공 삭제 방지) ---
 def assign_positions_in_team(team_members):
-    # 1. 일단 점수순으로 정렬 (기본 원칙)
+    # 1. 일단 점수순으로 정렬
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
-    # 초기화
     for p in team_members: 
         p['assigned_pos'] = None
         p['match_type'] = 'random'
     
     total_cnt = len(team_members)
     
-    # --- [NEW] 대기자 발생 시 '유니크 포지션' 구제 로직 ---
-    # 예: 10명 중 1명이 대기를 가야 하는데, 그 사람이 유일한 '세터'나 '속공'이라면?
-    # 점수가 낮아도 살려주고, 대신 포지션 겹치는 다른 사람을 대기로 보냄.
-    
-    # 출전 가능한 인원 수 (코트 정원)
-    # 보통 9명이 뛰지만, 인원이 적으면 전원 출전
+    # --- 유니크 포지션 보호 로직 (유지) ---
     court_capacity = 9
-    if total_cnt <= court_capacity:
-        # 전원 출전이므로 구제할 필요 없음
-        pass
-    else:
-        # 현재 점수 기준으로 '출전조(Safe)'와 '대기조(Drop)' 구분
+    if total_cnt > court_capacity:
         safe_zone = team_members[:court_capacity]
         drop_zone = team_members[court_capacity:]
-        
-        # 구제 대상 포지션 (희귀 포지션)
         rare_positions = ["세터", "속공", "라이트", "레프트"]
         
-        # 대기조에서 구제 대상 찾기
         for p_drop in drop_zone:
             wish = str(p_drop.get('1순위', '')).strip()
             if wish in rare_positions:
-                # 출전조에 이 포지션이 있는지 확인
                 has_pos_in_safe = any(str(p.get('1순위', '')).strip() == wish for p in safe_zone)
-                
                 if not has_pos_in_safe:
-                    # [발견!] 출전조에 없는 포지션을 가진 대기자 -> 구제 필요!
-                    # 출전조에서 '대신 내려갈 사람' 찾기 (1순위가 겹치거나 중요도 낮은 사람 중 점수 꼴찌)
-                    
-                    # 교체 대상: 출전조의 맨 마지막 사람 (점수 커트라인)
-                    # 단, 그 사람도 유니크 포지션이면 안 되므로 검사
                     swap_target_idx = -1
                     for i in range(len(safe_zone)-1, -1, -1):
                         p_safe = safe_zone[i]
-                        w_safe = str(p_safe.get('1순위', '')).strip()
-                        # 교체 대상이 또 다른 유니크 포지션 유일 생존자면 건너뜀 (복잡도 방지 위해 단순화: 그냥 점수 낮은 순 교체)
                         swap_target_idx = i
                         break
                     
                     if swap_target_idx != -1:
-                        # 스왑 실행 (메인 리스트 내 위치 변경)
-                        # safe_zone[swap_target_idx] <-> p_drop
-                        # 원래 team_members 리스트에서 인덱스를 찾아 바꿈
                         idx_safe = team_members.index(safe_zone[swap_target_idx])
                         idx_drop = team_members.index(p_drop)
                         team_members[idx_safe], team_members[idx_drop] = team_members[idx_drop], team_members[idx_safe]
-                        
-                        # 리스트 갱신 (다시 슬라이싱 준비)
                         safe_zone = team_members[:court_capacity]
                         drop_zone = team_members[court_capacity:]
 
-    # ---------------------------------------------------------
-
-    # 2. 쿼터 설정 (실제 출전하는 상위 N명 기준으로 쿼터 산정)
+    # 2. 쿼터 설정
     starters = team_members[:9] if total_cnt >= 9 else team_members
-    
-    # 쿼터 초기값
     quotas = POSITION_QUOTAS.copy()
     
-    # [수정] 전체 인원이 아니라 '스타팅 멤버'의 희망 포지션만 카운트
-    # 그래야 "속공 신청자가 대기 갔는데 속공 자리가 남는" 유령 현상을 방지함
     starter_wishes = [str(p.get('1순위', '')).strip() for p in starters]
-    wishes_all = starter_wishes # 단순화 (1순위 기준)
+    count_fast = starter_wishes.count('속공')
     
-    count_fast = wishes_all.count('속공')
-    
-    # 유동적 쿼터 적용
     team_size_court = len(starters)
     
+    # [핵심 수정] 9명 이상일 때는 쿼터 변경 절대 금지 (속공 유지)
     if team_size_court >= 9:
-        if count_fast == 0:
-            quotas['속공'] = 0; quotas['센터백'] += 1 
+        pass 
     elif team_size_court == 8:
         if count_fast > 0: quotas['센터백'] = 0 
         else: quotas['속공'] = 0 
@@ -773,7 +738,6 @@ def assign_positions_in_team(team_members):
 
     # 3. 배정 로직 (점수 높은 순)
     for p in team_members:
-        # 1, 2, 3순위 순서대로 확인
         for step in [1, 2, 3]:
             wish = str(p.get(f'{step}순위', '')).strip()
             if wish and wish != "선택 안함" and quotas.get(wish, 0) > 0:
@@ -791,8 +755,6 @@ def assign_positions_in_team(team_members):
         if not p['assigned_pos']:
             filled = False
             excluded_list = p.get('excluded', [])
-            
-            # 남은 쿼터 확인
             for pos, q in quotas.items():
                 if q > 0 and pos not in excluded_list:
                     p['assigned_pos'] = pos
