@@ -1209,11 +1209,11 @@ def generate_vega_priority_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# 접속 로그 기록
+# [NEW] 사이트 접속 로그 기록
 user_guess = st.session_state.get('my_name', '익명') 
 log_visit("메인접속", user_guess)
 
-# ▼▼▼ 사이드바 전체 코드 (여기를 확인하세요) ▼▼▼
+# ▼▼▼ 사이드바 코드는 여기에 있어야 합니다 (들여쓰기 없음!) ▼▼▼
 with st.sidebar:
     st.header("📢 Update Log")
     for date, logs in UPDATE_LOGS.items():
@@ -1228,16 +1228,16 @@ with st.sidebar:
     
     st.markdown("### 📞 문의하기")
     st.markdown("💬 [**오픈채팅방 입장 (클릭)**](https://open.kakao.com/o/gf1s6t9h)")
-    # 원래 있던 코드의 마지막 줄
     st.caption("🗣️ **소리함**: 우측 상단 '소리함' 탭을 이용해주세요.")
     
-    # -------------------------------------------------------
-    # [여기!] 아래 코드를 추가해서 붙여넣으세요
-    # -------------------------------------------------------
+    # 서버 연결 상태 확인
     if get_sheet_instance(SHEET_APPLICANTS):
         st.success("✅ 서버 연결됨")
     else:
         st.error("❌ 서버 연결 실패")
+
+# --- [UI] 메인 타이틀 (이미지 적용) ---
+# ... (이 아래로 기존 get_img_base64 함수 등이 이어지면 됩니다)
 
 # --- [UI] 메인 타이틀 (이미지 적용) ---
 def get_img_base64(file_path):
@@ -2129,12 +2129,12 @@ with tab7:
     st.header("⚙️ 관리자 페이지")
     admin_auth = st.empty()
 
-    # [1] 로그인 화면
+    # [1] 로그인 화면 (로그인 안 된 상태일 때만 표시)
     if not st.session_state['admin_logged_in']:
         with admin_auth.form("admin_main_login"):
             pw = st.text_input("비밀번호", type="password")
             
-            # [수정] '로그인 유지' 체크박스 추가
+            # 로그인 유지 체크박스
             keep_login = st.checkbox("로그인 상태 유지하기 (체크 필수)", value=True)
             
             if st.form_submit_button("확인"):
@@ -2142,7 +2142,7 @@ with tab7:
                     st.session_state['admin_logged_in'] = True
                     st.toast("관리자 모드 접속", icon="🔓")
                     
-                    # [핵심] 체크했으면 주소창에 도장 찍기 (?auth=비번)
+                    # 체크했으면 주소창에 도장 찍기
                     if keep_login:
                         st.query_params["auth"] = ADMIN_PASSWORD
                     
@@ -2151,29 +2151,14 @@ with tab7:
                 else: 
                     st.error("비밀번호가 일치하지 않습니다.")
     
-    # [로그아웃 버튼 추가] (로그인 상태일 때)
+    # [2] 로그인 성공 후 화면 (로그아웃 버튼 + 기능)
     if st.session_state['admin_logged_in']:
+        # 로그아웃 버튼
         if st.button("로그아웃 (도장 지우기)", key="logout_btn"):
             st.session_state['admin_logged_in'] = False
             st.query_params.clear() # 주소창 도장 삭제
             st.rerun()
 
-    # [1] 로그인 화면 (비로그인 상태)
-    if not st.session_state['admin_logged_in']:
-        with admin_auth.form("admin_main_login"):
-            pw = st.text_input("비밀번호", type="password")
-            if st.form_submit_button("확인"):
-                if pw == ADMIN_PASSWORD:
-                    st.session_state['admin_logged_in'] = True
-                    st.toast("관리자 모드 접속", icon="🔓")
-                    admin_auth.empty()
-                    st.rerun()
-                else: 
-                    st.error("비밀번호가 일치하지 않습니다.")
-
-    # [2] 관리자 메인 화면 (로그인 상태)
-    if st.session_state['admin_logged_in']:
-        
         # =========================================================
         # 섹션 1: 대시보드 & 기본 설정
         # =========================================================
@@ -2188,11 +2173,11 @@ with tab7:
                 else:
                     df_log = pd.DataFrame(logs)
                     
-                    # [수정] 한국 시간(KST) 기준 오늘 날짜 필터링
+                    # 한국 시간(KST) 기준 오늘 날짜 필터링
                     now_kst = datetime.utcnow() + timedelta(hours=9)
                     today_str = now_kst.strftime("%Y-%m-%d")
                     
-                    # 날짜 컬럼 생성 (에러 방지용 문자열 변환)
+                    # 날짜 컬럼 생성
                     df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
                     df_today = df_log[df_log['날짜'] == today_str]
                     
@@ -2212,7 +2197,7 @@ with tab7:
         st.divider()
 
         # =========================================================
-        # 섹션 2: 라인업 공개 설정 (가장 자주 쓰는 기능)
+        # 섹션 2: 라인업 공개 설정
         # =========================================================
         st.subheader("📢 라인업 공개 설정")
         
@@ -2241,7 +2226,7 @@ with tab7:
         st.divider()
 
         # =========================================================
-        # 섹션 3: 참가자 관리 (확정/대기 분류)
+        # 섹션 3: 참가자 관리
         # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
@@ -2249,19 +2234,16 @@ with tab7:
         if apps:
             df_manage = pd.DataFrame(apps)
             
-            # 입금 체크박스용 컬럼 생성
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             cols_manage = ["이름", "연락처", "입금_bool", "1순위", "비고"]
             
-            # [명단 분리] 확정(선착순 20명 or VEGA) vs 대기
             df_manage = df_manage.reset_index(drop=True)
             mask_confirmed = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]", regex=True))
             
             df_confirmed = df_manage[mask_confirmed]
             df_waiting = df_manage[~mask_confirmed]
 
-            # 1. 확정 명단
             st.success(f"📌 **경기 확정 ({len(df_confirmed)}명)**")
             edited_confirmed = st.data_editor(
                 df_confirmed[cols_manage], 
@@ -2269,7 +2251,6 @@ with tab7:
                 hide_index=True, key="editor_confirmed"
             )
             
-            # 2. 대기 명단
             if not df_waiting.empty:
                 st.warning(f"⏳ **예비 대기 ({len(df_waiting)}명)**")
                 edited_waiting = st.data_editor(
@@ -2278,27 +2259,20 @@ with tab7:
                     hide_index=True, key="editor_waiting"
                 )
             
-            # [저장 버튼]
             if st.button("💾 참가 현황 저장하기", type="primary"):
-                # 변경된 체크박스 값 반영
-                # (1) 확정 명단 반영
                 for idx, row in edited_confirmed.iterrows():
                     org_idx = row.name
                     df_manage.loc[org_idx, '입금_bool'] = row['입금_bool']
-                # (2) 대기 명단 반영
                 if not df_waiting.empty:
                     for idx, row in edited_waiting.iterrows():
                         org_idx = row.name
                         df_manage.loc[org_idx, '입금_bool'] = row['입금_bool']
                 
-                # bool -> 'O'/'X' 변환 후 저장
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
-                update_lineup(df_manage) # 저장 함수 호출
-                
+                update_lineup(df_manage)
                 st.success("저장되었습니다.")
                 time.sleep(0.5)
                 st.rerun()
-
         else:
             st.info("아직 신청자가 없습니다.")
 
@@ -2316,7 +2290,6 @@ with tab7:
             for idx, row in pd.DataFrame(apps).iterrows():
                 p_phone = str(row.get('연락처', '')).strip()
                 if not p_phone: continue
-                
                 is_vega = "[VEGA]" in row['이름']
                 if idx < MAX_CAPACITY or is_vega:
                     confirmed_phones.append(p_phone)
@@ -2330,7 +2303,6 @@ with tab7:
                 st.info("✅ 확정자 문자")
                 st.code(", ".join(confirmed_phones), language="text")
                 st.code(f"[여순광배구]\n금일 18:30 운동 예정.\n라인업 확인 바랍니다.\n{SITE_URL}", language="text")
-                
             with mc2:
                 st.warning("⏳ 대기자 문자")
                 if waiting_phones:
@@ -2342,13 +2314,12 @@ with tab7:
         st.divider()
 
         # =========================================================
-        # 섹션 5: 게임 생성 및 종료 (Lifecycle)
+        # 섹션 5: 게임 관리
         # =========================================================
         st.subheader("🛠️ 게임 관리 (생성/종료)")
         
         tab_create, tab_end = st.tabs(["🆕 새 게임 만들기", "🏁 현재 게임 종료"])
         
-        # [5-1] 새 게임 만들기
         with tab_create:
             with st.form("create_game"):
                 st.caption("새로운 게임을 만들면 기존 명단은 자동으로 '지난 기록'으로 저장됩니다.")
@@ -2370,12 +2341,10 @@ with tab7:
                 contact = st.text_input("문의 연락처")
 
                 if st.form_submit_button("개설하기"):
-                    # 1. 아카이빙 및 초기화
                     if reset_chk:
                         archive_current_game()
                         clear_applicants()
                     
-                    # 2. 새 정보 저장
                     deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
                     info = {
                         "제목": title, "일시": dt, "장소": loc, "성별": gender,
@@ -2387,13 +2356,10 @@ with tab7:
                     time.sleep(1.0)
                     st.rerun()
 
-        # [5-2] 현재 게임 종료
         with tab_end:
             st.warning("게임을 종료하면 '모집 마감' 상태가 되며, 명단은 그대로 유지됩니다.")
             if st.button("현재 게임 종료하기 (CLOSED)"):
-                archive_current_game() # 기록 저장
-                
-                # 명단 유지, 상태만 CLOSED
+                archive_current_game()
                 close_info = {
                     "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
                     "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
@@ -2406,9 +2372,8 @@ with tab7:
         st.divider()
 
         # =========================================================
-        # 섹션 6: 기타 관리 (영상/건의/블랙리스트)
+        # 섹션 6: 기타 관리
         # =========================================================
-        
         with st.expander("🎬 유튜브 영상 등록"):
             with st.form("video_upload"):
                 v_title = st.text_input("영상 제목")
