@@ -2011,8 +2011,23 @@ with tab6:
             # [생성 버튼]
             if st.button("🚀 라인업 다시 생성 (알고리즘 실행)", type="primary"):
                 with st.spinner("최적의 밸런스를 계산 중입니다..."): 
-                    st.session_state['fair_results'] = generate_vega_priority_schedule(df)
-                    st.success("생성 완료! 아래 내용을 확인하고 '저장' 버튼을 누르세요.")
+                    # [핵심 수정] 기존 시트에 저장된 라인업 데이터(팀1, 확정1 등)를 메모리에서 강제 삭제
+                    # 이렇게 해야 알고리즘이 '과거의 망령'에 시달리지 않고 제로베이스에서 계산합니다.
+                    df_clean = df.copy()
+                    
+                    # 1~4세트 관련 컬럼 초기화
+                    cols_to_clean = []
+                    for i in range(1, 5):
+                        cols_to_clean.extend([f"팀{i}", f"확정{i}"])
+                    
+                    for col in cols_to_clean:
+                        if col in df_clean.columns:
+                            df_clean[col] = "" # 공백으로 초기화
+                    
+                    # 깨끗해진 데이터(df_clean)를 알고리즘에 전달
+                    st.session_state['fair_results'] = generate_vega_priority_schedule(df_clean)
+                    
+                    st.success("기존 데이터를 초기화하고 새로 생성했습니다! '저장' 버튼을 눌러 확정하세요.")
                     
            # [결과 표시]
             if 'fair_results' in st.session_state:
