@@ -11,6 +11,8 @@ import altair as alt
 import plotly.graph_objects as go 
 import base64  
 import os
+from streamlit.web.server.websocket_headers import _get_websocket_headers
+
 
 # [수정] 모바일 최적화 CSS (디자인 복구 + 깔끔한 알약 스타일 통일)
 st.markdown("""
@@ -156,6 +158,21 @@ def get_connection():
     except Exception as e:
         return None
 
+# [기능 함수 추가] 사용자 IP 주소 가져오기
+def get_client_ip():
+    try:
+        headers = _get_websocket_headers()
+        if headers:
+            # Streamlit Cloud 등 프록시 환경에서는 'X-Forwarded-For'에 진짜 IP가 있음
+            if "X-Forwarded-For" in headers:
+                return headers["X-Forwarded-For"].split(",")[0]
+            # 로컬 환경 등
+            elif "Remote-Addr" in headers:
+                return headers["Remote-Addr"]
+    except:
+        pass
+    return "unknown"
+
 def get_sheet_instance(sheet_name):
     client = get_connection()
     if client:
@@ -171,30 +188,53 @@ def get_sheet_instance(sheet_name):
 
 # --- [유틸리티] ---
 
-# [기능 함수] 접속 로그 저장 함수 (한국 시간 적용 수정본)
+# [기능 함수] 접속 로그 저장 함수 (1일 1회 IP 중복 방지 적용)
 def log_visit(action_type, user_info="익명"):
-    # 세션 상태를 확인해서, 이미 찍은 도장이면 또 찍지 않게 방지 (새로고침 남발 방지)
-    session_key = f"log_{action_type}"
+    # 1. 내 IP 가져오기
+    client_ip = get_client_ip()
     
-    if session_key not in st.session_state:
-        sheet = get_sheet_instance(SHEET_LOGS)
-        if sheet:
-            try:
-                # 1. 시트가 비어있으면 헤더 생성
-                if not sheet.get_all_values():
-                    sheet.append_row(["일시", "유형", "접속자(추정)"])
+    # 2. 오늘 날짜 (한국 시간)
+    now_kst = datetime.utcnow() + timedelta(hours=9)
+    today_str = now_kst.strftime("%Y-%m-%d") # YYYY-MM-DD
+    now_full_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
+
+    sheet = get_sheet_instance(SHEET_LOGS)
+    if sheet:
+        try:
+            # 3. 기존 로그 가져오기 (중복 체크용)
+            rows = sheet.get_all_values()
+            
+            # 헤더가 없으면 새로 만듦 (IP 컬럼 추가)
+            if not rows:
+                sheet.append_row(["일시", "유형", "접속자(추정)", "IP주소"])
+                rows = []
+            
+            # 4. 중복 체크 로직
+            # "오늘 날짜" + "내 IP" + "같은 행동(메인접속 등)"이 이미 있는지 확인
+            is_duplicate = False
+            
+            # 데이터가 많아지면 느려질 수 있으므로, 최근 100개만 검사하거나 전체 검사
+            # 여기서는 전체 검사 (데이터가 적으므로)
+            for row in rows[1:]: # 헤더 제외
+                # row[0]은 '2026-01-29 10:00:00' 형식이므로 날짜만 자름
+                if len(row) >= 4:
+                    log_date = row[0].split(" ")[0] # 날짜 부분
+                    log_type = row[1]
+                    log_ip = row[3]
+                    
+                    if log_date == today_str and log_ip == client_ip and log_type == action_type:
+                        is_duplicate = True
+                        break
+            
+            # 5. 중복이 아닐 때만 저장
+            if not is_duplicate:
+                sheet.append_row([now_full_str, action_type, user_info, client_ip])
+                # 세션에도 기록 (불필요한 시트 조회 방지)
+                st.session_state[f"log_{action_type}"] = True
                 
-                # [수정 부분] UTC 시간에 9시간을 더해 한국 시간(KST) 생성
-                now_kst = datetime.utcnow() + timedelta(hours=9)
-                now_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
-                
-                # 2. 로그 저장
-                sheet.append_row([now_str, action_type, user_info])
-                
-                # 3. 세션에 기록 (이번 접속에서는 다시 카운트 안 함)
-                st.session_state[session_key] = True
-            except:
-                pass # 로그 저장 실패해도 앱은 멈추면 안 됨
+        except Exception as e:
+            # 에러 나도 앱이 멈추면 안 됨 (print로 확인만)
+            print(f"로그 저장 실패: {e}")
 
 def normalize_phone(phone):
     if not phone: return ""
