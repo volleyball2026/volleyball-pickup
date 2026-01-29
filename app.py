@@ -633,19 +633,42 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
-# --- [UI 함수] 신청자 목록 카드 디자인 (모바일 2열 "플레이어 카드" 스타일) ---
+# --- [UI 함수] 신청자 목록 카드 디자인 (모바일 2열 + 포지션 약어 표시) ---
 def render_applicant_list_html(df):
     if df.empty:
         return "<div style='text-align:center; padding:20px; color:#999;'>아직 신청자가 없습니다.</div>"
     
-    # 2열 그리드 (간격 10px)
+    # [NEW] 포지션 줄임말 매핑 (약어 사전)
+    POS_ABBR = {
+        "레프트": "레", "라이트": "라", "세터": "세", "속공": "속",
+        "앞차": "앞", "백차": "백",
+        "레프트백": "레백", "센터백": "센백", "라이트백": "라백",
+        "선택 안함": "-", "": "-", "nan": "-"
+    }
+
+    # 2열 그리드
     html_code = "<div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>"
     
     for _, row in df.iterrows():
         # 데이터 추출
         name = row['이름']
         level = row.get('레벨', '입문')
-        pos = row.get('1순위', '-')
+        
+        # 1, 2, 3순위 가져오기
+        p1 = str(row.get('1순위', '-')).strip()
+        p2 = str(row.get('2순위', '-')).strip()
+        p3 = str(row.get('3순위', '-')).strip()
+        
+        # [핵심] 포지션 체인 생성 (예: 세-레-센백)
+        # 2순위, 3순위가 없거나 '선택 안함'이면 표시하지 않음
+        abbr1 = POS_ABBR.get(p1, p1[:1])
+        chain_str = abbr1
+        
+        if p2 and p2 != "선택 안함" and p2 != "-":
+            chain_str += f"-{POS_ABBR.get(p2, p2[:1])}"
+            if p3 and p3 != "선택 안함" and p3 != "-":
+                chain_str += f"-{POS_ABBR.get(p3, p3[:1])}"
+
         note = str(row.get('비고', ''))
         status_bool = str(row.get('입금', '')).upper() == 'O'
         
@@ -660,11 +683,11 @@ def render_applicant_list_html(df):
             opacity = "1.0"
         else:
             status_icon = "⏳"
-            bg_color = "#F9F9F9" # 살짝 회색
+            bg_color = "#F9F9F9"
             border_color = "#EEEEEE"
-            opacity = "0.7" # 흐릿하게 처리
+            opacity = "0.7"
             
-        # 뱃지 (VEGA / 대기 / 지각) - 카드 상단에 표시
+        # 뱃지
         top_badges = ""
         if is_vega:
             top_badges += "<span style='background:#1565C0; color:white; font-size:0.6rem; padding:2px 5px; border-radius:10px; margin-right:2px;'>VEGA</span>"
@@ -673,34 +696,34 @@ def render_applicant_list_html(df):
         elif "지각" in note:
             top_badges += "<span style='background:#FFEBEE; color:#D32F2F; font-size:0.6rem; padding:2px 5px; border-radius:10px;'>지각</span>"
 
-        # [디자인 핵심] 가운데 정렬 + 이름 확대
+        # 카드 HTML
         card = (
             f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; "
             f"padding: 12px 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; opacity: {opacity}; position: relative;'>"
             
-            # 1. 우측 상단 상태 아이콘 (절대 위치)
+            # 상태 아이콘
             f"  <div style='position: absolute; top: 8px; right: 8px; font-size: 0.8em;'>{status_icon}</div>"
             
-            # 2. 포지션 아이콘 (가운데 크게)
+            # 포지션 아이콘 (1순위 한글자)
             f"  <div style='display: flex; justify-content: center; margin-bottom: 6px;'>"
             f"    <div style='width: 35px; height: 35px; border-radius: 50%; background-color: #f0f2f6; "
             f"    color: #444; display: flex; align-items: center; justify-content: center; "
             f"    font-weight: 800; font-size: 1.0em; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
-            f"      {pos[:1]}"
+            f"      {abbr1}"
             f"    </div>"
             f"  </div>"
             
-            # 3. 뱃지 (이름 위)
+            # 뱃지
             f"  <div style='margin-bottom: 4px; min-height: 15px;'>{top_badges}</div>"
             
-            # 4. 이름 (크고 진하게)
+            # 이름
             f"  <div style='font-size: 1.1em; font-weight: 800; color: #222; margin-bottom: 2px; letter-spacing: -0.5px;'>"
             f"    {display_name}"
             f"  </div>"
             
-            # 5. 레벨/포지션 (작게)
-            f"  <div style='font-size: 0.75em; color: #888; letter-spacing: -0.3px;'>"
-            f"    {level} · {pos}"
+            # [수정됨] 레벨 · 포지션 체인 (세-레-센백)
+            f"  <div style='font-size: 0.75em; color: #666; letter-spacing: -0.5px; font-weight: 600;'>"
+            f"    {level} · <span style='color:#1565C0;'>{chain_str}</span>"
             f"  </div>"
             
             f"</div>"
@@ -709,7 +732,6 @@ def render_applicant_list_html(df):
         
     html_code += "</div>"
     return html_code
-
 # --- [UI 함수] 작전판(Court View) HTML 생성 ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
 # --- [UI 함수] 작전판(Court View) HTML 생성 (점수 상세 색상 복구 + 들여쓰기 방지) ---
@@ -1475,20 +1497,65 @@ with tab1:
         st.subheader("📊 실시간 참가 신청 현황")
         if applicants:
             df_public = pd.DataFrame(applicants)
+            # --- [Tab 1 내부 코드 수정] ---
             st.markdown("##### 🚦 포지션 경쟁률 (정원 내)")
-            # 상위 20명만 포지션 경쟁률에 반영 (예비 인원은 경쟁률에서 제외)
+            
+            # 상위 20명만 포지션 경쟁률에 반영
             df_in_cap = df_public.iloc[:MAX_CAPACITY]
+            
             if '1순위' in df_in_cap.columns:
-                pos_counts = df_in_cap['1순위'].value_counts()
-                html_code = """<style>.pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin-bottom: 20px;}.pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}.pos-title {font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: bold;}.pos-count {font-size: 1.4em; font-weight: 900; line-height: 1.2; margin-bottom: 2px;}.pos-status {font-size: 0.75em; font-weight: bold;}.status-safe {color: #2E7D32; background-color: #E8F5E9; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-warn {color: #E65100; background-color: #FFF3E0; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-max {color: #1565C0; background-color: #E3F2FD; border-radius: 4px; padding: 2px 4px; display:inline-block;} .status-full {color: #C62828; background-color: #FFEBEE; border-radius: 4px; padding: 2px 4px; display:inline-block;} </style><div class="pos-container">"""
+                # 1, 2, 3순위 카운트 집계
+                c1 = df_in_cap['1순위'].value_counts()
+                c2 = df_in_cap['2순위'].value_counts()
+                c3 = df_in_cap['3순위'].value_counts()
+                
+                # CSS 스타일 (그리드 레이아웃 + 작은 글씨용 스타일 추가)
+                html_code = """
+                <style>
+                    .pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-bottom: 20px;}
+                    .pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
+                    .pos-title {font-size: 0.85em; color: #333; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;}
+                    .pos-main-count {font-size: 1.3em; font-weight: 900; color: #1565C0; margin-bottom: 4px;}
+                    .pos-sub-info {font-size: 0.65em; color: #666; display: flex; justify-content: space-around; background: #f9f9f9; border-radius: 4px; padding: 2px;}
+                    .sub-item {display: flex; flex-direction: column;}
+                    .sub-label {color: #999; font-size: 0.9em;}
+                    .sub-val {font-weight: bold; color: #444;}
+                    .status-badge {font-size: 0.7em; padding: 1px 4px; border-radius: 3px; margin-top: 4px; display: inline-block;}
+                    .s-safe {background:#E8F5E9; color:#2E7D32;}
+                    .s-warn {background:#FFF3E0; color:#E65100;}
+                </style>
+                <div class="pos-container">
+                """
+                
+                # 포지션 순서대로 카드 생성
                 for pos in POSITIONS_ALL:
-                    count = pos_counts.get(pos, 0)
-                    if count >= 3: status_class, status_text = "status-warn", "많음"
-                    else: status_class, status_text = "status-safe", "여유"
-                    html_code += f"""<div class="pos-card"><div class="pos-title">{pos}</div><div class="pos-count" style="color:#333;">{count}<span style="font-size:0.5em; font-weight:normal; color:#888;">명</span></div><div class="pos-status"><span class="{status_class}">{status_text}</span></div></div>"""
+                    # 각 순위별 인원 수 (없으면 0)
+                    cnt1 = c1.get(pos, 0)
+                    cnt2 = c2.get(pos, 0)
+                    cnt3 = c3.get(pos, 0)
+                    
+                    # 상태 뱃지 (1순위 기준)
+                    if cnt1 >= 3: status = "<span class='status-badge s-warn'>혼잡</span>"
+                    elif cnt1 == 0: status = "<span class='status-badge s-safe'>빈집</span>"
+                    else: status = "<span class='status-badge s-safe'>여유</span>"
+                    
+                    # 3순위 가능한 포지션인지 확인 (불가능하면 회색 처리)
+                    val3_display = f"{cnt3}"
+                    if pos not in POSITIONS_3RD: val3_display = "-"
+                    
+                    html_code += f"""
+                    <div class="pos-card">
+                        <div class="pos-title">{pos} {status}</div>
+                        <div class="pos-main-count">{cnt1}<span style="font-size:0.6em; font-weight:normal; color:#888;">명(1)</span></div>
+                        <div class="pos-sub-info">
+                            <div class="sub-item"><span class="sub-label">2순위</span><span class="sub-val">{cnt2}</span></div>
+                            <div style="border-right:1px solid #ddd;"></div>
+                            <div class="sub-item"><span class="sub-label">3순위</span><span class="sub-val">{val3_display}</span></div>
+                        </div>
+                    </div>
+                    """
                 html_code += "</div>"
                 st.markdown(html_code, unsafe_allow_html=True)
-            
             st.divider()
             col_list, col_stats = st.columns([2.2, 1])
             with col_list:
