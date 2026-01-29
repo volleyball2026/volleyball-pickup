@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import base64  
 import os
 
-# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조 + 탭 색상 완벽 분리 최종판)
+# [수정] UI 디자인 완전 복구 (알약 모양 복구 + 주황색 탭 분리 완벽 해결)
 st.markdown("""
     <style>
         /* 1. 상단 헤더 숨기기 */
@@ -22,7 +22,7 @@ st.markdown("""
             padding-bottom: 5rem !important;
         }
 
-        /* 2. 탭 네비게이션 바 고정 */
+        /* 2. 탭바 고정 및 가로 스크롤 설정 */
         div[data-testid="stTabsNav"] {
             position: sticky;
             top: 0;
@@ -31,8 +31,6 @@ st.markdown("""
             padding: 10px 0;
             border-bottom: 1px solid #f0f0f0;
         }
-
-        /* 3. 탭 리스트 가로 스크롤 */
         div[data-baseweb="tab-list"] {
             gap: 8px;
             overflow-x: auto;
@@ -44,53 +42,66 @@ st.markdown("""
         }
         div[data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
 
-        /* ----------------------------------------------------------- */
-        /* [1단계: 초기화] 모든 탭의 2번째 버튼을 일단 '파란색/회색'으로 만듭니다. */
-        /* 이렇게 하면 안쪽 세트 탭(3·4세트)은 자동으로 파란색이 되어 해결됩니다. */
-        /* ----------------------------------------------------------- */
+        /* ================================================================= */
+        /* [1단계: 디자인 복구] 모든 탭 버튼을 '알약 모양 + 회색/파랑'으로 통일 */
+        /* ================================================================= */
+        button[data-baseweb="tab"] {
+            height: 40px !important;               /* 높이 고정 */
+            min-height: 40px !important;
+            border-radius: 20px !important;        /* 둥근 알약 모양 복구 */
+            padding: 0 16px !important;
+            background-color: #f7f7f7 !important;  /* 기본 회색 */
+            border: 1px solid #eee !important;
+            color: #666 !important;
+            font-size: 14px !important;
+            font-weight: normal !important;
+            flex: 0 0 auto;
+        }
+        
+        /* 탭 선택됐을 때 (기본 파란색) */
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background-color: #E3F2FD !important;  /* 연한 파랑 */
+            color: #1565C0 !important;             /* 진한 파랑 */
+            border-color: #1565C0 !important;
+            font-weight: bold !important;
+        }
+
+        /* ================================================================= */
+        /* [2단계: 주황색 강조] 2번째 탭은 일단 무조건 주황색으로 덮어씀 */
+        /* ================================================================= */
         button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #f7f7f7 !important;
+            background-color: #FFF3E0 !important;  /* 연한 주황 */
+            color: #E65100 !important;             /* 진한 주황 */
+            border-color: #FF9800 !important;
+            font-weight: bold !important;
+        }
+        button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
+            background-color: #FF9800 !important;  /* 쨍한 주황 */
+            color: white !important;               /* 흰색 글씨 */
+            border: none !important;
+        }
+
+        /* ================================================================= */
+        /* [3단계: 오류 수정] 탭 내용물(stTabContent) 안에 있는 2번째 탭은 */
+        /* 다시 회색/파랑색으로 강제 원상복구 (여기가 핵심!) */
+        /* ================================================================= */
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2) {
+            background-color: #f7f7f7 !important;  /* 다시 회색으로 */
             color: #666 !important;
             border: 1px solid #eee !important;
             font-weight: normal !important;
         }
-        button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #E3F2FD !important;
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
+            background-color: #E3F2FD !important;  /* 다시 파랑으로 */
             color: #1565C0 !important;
             border-color: #1565C0 !important;
             font-weight: bold !important;
         }
-        
-        /* ----------------------------------------------------------- */
-        /* [2단계: 덮어쓰기] 화면 '맨 위'에 있는 탭 메뉴(메인)의 2번째 버튼만 '주황색'으로 칠합니다. */
-        /* div[data-testid="stTabsNav"] 중 첫 번째 요소(:nth-of-type(1))가 바로 메인 메뉴입니다. */
-        /* ----------------------------------------------------------- */
-        div[data-testid="stTabsNav"]:nth-of-type(1) button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #FFF3E0 !important; 
-            color: #E65100 !important;             
-            border: 1px solid #FF9800 !important;  
-            font-weight: bold !important;
-        }
-        
-        div[data-testid="stTabsNav"]:nth-of-type(1) button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #FF9800 !important; 
-            color: white !important;              
-            border: none !important;
-        }
 
-        /* ----------------------------------------------------------- */
-        /* [기타] 나머지 탭들(1, 3, 4...) 선택 스타일 (파란색) */
-        /* ----------------------------------------------------------- */
-        button[data-baseweb="tab"][aria-selected="true"]:not(:nth-of-type(2)) {
-            background-color: #E3F2FD !important;
-            color: #1565C0 !important;
-            border-color: #1565C0 !important;
-            font-weight: bold;
-        }
-
+        /* 텍스트 여백 제거 */
         button[data-baseweb="tab"] p { margin: 0; }
 
-        /* 신청 버튼 디자인 */
+        /* 신청 버튼 강조 */
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"] {
             background-color: #1565C0 !important;
             color: white !important;
@@ -105,7 +116,6 @@ st.markdown("""
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:active {
             transform: scale(0.98);
         }
-
     </style>
 """, unsafe_allow_html=True)
 
