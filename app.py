@@ -1510,7 +1510,8 @@ with tab1:
         st.subheader("📊 실시간 참가 신청 현황")
         if applicants:
             df_public = pd.DataFrame(applicants)
-            # --- [Tab 1 내부 코드 수정] ---
+            
+            # --- [Tab 1 내부 코드 교체] ---
             st.markdown("##### 🚦 포지션 경쟁률 (정원 내)")
             
             # 상위 20명만 포지션 경쟁률에 반영
@@ -1522,7 +1523,7 @@ with tab1:
                 c2 = df_in_cap['2순위'].value_counts()
                 c3 = df_in_cap['3순위'].value_counts()
                 
-                # CSS 스타일 (그리드 레이아웃 + 작은 글씨용 스타일 추가)
+                # CSS 스타일 (그리드 레이아웃)
                 html_code = """
                 <style>
                     .pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-bottom: 20px;}
@@ -1542,17 +1543,16 @@ with tab1:
                 
                 # 포지션 순서대로 카드 생성
                 for pos in POSITIONS_ALL:
-                    # 각 순위별 인원 수 (없으면 0)
                     cnt1 = c1.get(pos, 0)
                     cnt2 = c2.get(pos, 0)
                     cnt3 = c3.get(pos, 0)
                     
-                    # 상태 뱃지 (1순위 기준)
+                    # 상태 뱃지
                     if cnt1 >= 3: status = "<span class='status-badge s-warn'>혼잡</span>"
                     elif cnt1 == 0: status = "<span class='status-badge s-safe'>빈집</span>"
                     else: status = "<span class='status-badge s-safe'>여유</span>"
                     
-                    # 3순위 가능한 포지션인지 확인 (불가능하면 회색 처리)
+                    # 3순위는 가능한 포지션만 숫자 표시
                     val3_display = f"{cnt3}"
                     if pos not in POSITIONS_3RD: val3_display = "-"
                     
@@ -1568,7 +1568,10 @@ with tab1:
                     </div>
                     """
                 html_code += "</div>"
+                
+                # [중요] HTML 렌더링
                 st.markdown(html_code, unsafe_allow_html=True)
+                
             st.divider()
             col_list, col_stats = st.columns([2.2, 1])
             with col_list:
