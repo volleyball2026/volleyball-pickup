@@ -786,10 +786,12 @@ def get_priority_score(player, global_history, global_hardship):
 # --- [알고리즘 수정 Ver 3.9.7] 9인제 포지션 고정 (속공 삭제 방지) ---
 # --- [알고리즘 수정] 유니크 보호 + 쿼터 유지 + 베가 강제 배정(Force Fill) 통합본 ---
 # --- [알고리즘 수정] VEGA 절대 우선 배정 (픽업보다 먼저 빈자리 선점) ---
+# --- [알고리즘 수정] VEGA 절대 우선권 (픽업의 '새치기' 원천 봉쇄) ---
 def assign_positions_in_team(team_members):
-    # 1. 점수순 정렬
+    # 1. 점수순 정렬 (같은 등급 내에서는 점수순 경쟁)
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
+    # 초기화
     for p in team_members: 
         p['assigned_pos'] = None
         p['match_type'] = 'random'
@@ -798,7 +800,6 @@ def assign_positions_in_team(team_members):
     
     # ==========================================
     # [기능 1: 유니크 포지션 보호 로직] (유지)
-    # 정원 초과 시, 중요 포지션(세터/속공) 희망자를 살리기 위한 교체 로직
     # ==========================================
     court_capacity = 9
     if total_cnt > court_capacity:
@@ -841,11 +842,11 @@ def assign_positions_in_team(team_members):
     elif team_size_court == 7: quotas['속공'] = 0; quotas['센터백'] = 0
     elif team_size_court == 6: quotas['속공'] = 0; quotas['센터백'] = 0; quotas['백차'] = 0
 
-    # ---------------------------------------------------------
-    # [핵심 변경] 배정 순서를 4단계로 분리하여 VEGA 권한 강화
-    # ---------------------------------------------------------
+    # ==========================================
+    # [기능 3: 계급별 순차 배정] (핵심 수정!)
+    # ==========================================
 
-    # [1단계] VEGA 회원 희망 포지션 배정
+    # [Step 1] VEGA 회원 희망 포지션 우선 배정
     for p in team_members:
         if "[VEGA]" in str(p.get('이름', '')):
             for step in [1, 2, 3]:
@@ -859,20 +860,21 @@ def assign_positions_in_team(team_members):
                         elif step == 3: p['match_type'] = '3rd'
                         break
 
-    # [2단계] VEGA 회원 잔여 자리 강제 배정 (Force Fill)
-    # 픽업 회원이 가져가기 전에, 남은 VEGA 회원을 빈자리에 무조건 넣음
+    # [Step 2] VEGA 회원 "잔여석 강제 착석" (Force Fill)
+    # 픽업 회원이 1순위로 가져가기 전에, 남은 VEGA 회원을 빈자리에 먼저 앉힘
     for p in team_members:
         if not p['assigned_pos'] and "[VEGA]" in str(p.get('이름', '')):
-            # 제외 포지션이고 뭐고 일단 빈자리 찾아서 넣음
+            # 빈자리 찾기
             for pos, q in quotas.items():
                 if q > 0:
+                    # 제외 포지션이고 뭐고 일단 들어감 (베가 권한 보호)
                     p['assigned_pos'] = pos
                     quotas[pos] -= 1
-                    p['match_type'] = 'random' # 시스템 랜덤
+                    p['match_type'] = 'random'
                     break
 
-    # [3단계] 픽업(일반) 회원 희망 포지션 배정
-    # 이제서야 남은 자리에 대해 픽업 회원의 희망을 들어줌
+    # [Step 3] 픽업 회원 희망 포지션 배정
+    # 이제서야 픽업 회원의 소원을 들어줌 (VEGA가 앉고 남은 자리 중에서)
     for p in team_members:
         if not p['assigned_pos'] and "[VEGA]" not in str(p.get('이름', '')):
             for step in [1, 2, 3]:
@@ -886,7 +888,7 @@ def assign_positions_in_team(team_members):
                         elif step == 3: p['match_type'] = '3rd'
                         break
 
-    # [4단계] 픽업(일반) 회원 나머지 배정
+    # [Step 4] 픽업 회원 나머지 배정 (랜덤)
     for p in team_members:
         if not p['assigned_pos'] and "[VEGA]" not in str(p.get('이름', '')):
             filled = False
@@ -899,7 +901,7 @@ def assign_positions_in_team(team_members):
                     filled = True
                     break
     
-    # 최종: 아직도 자리 없는 사람은 대기
+    # [Final] 자리 없는 사람은 대기
     for p in team_members:
         if not p['assigned_pos']:
             p['assigned_pos'] = "대기"
