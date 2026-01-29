@@ -880,10 +880,24 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정 Ver 3.9.2] 포지션 핏 -> 밸런스 최적화 -> 에이스 보호 ---
 # --- [알고리즘 수정 Ver 3.9.5] 1~3순위 빈자리 매칭 + 에이스 보호 ---
 # --- [알고리즘 수정 Ver 3.9.6] 희귀 포지션(속공/세터 등) 절대 사수 로직 ---
+# --- [알고리즘 수정] 예비 인원 제외 필터링 적용 ---
 def generate_vega_priority_schedule(df):
-    base_players = df.to_dict('records')
+    # 1. 전체 명단을 가져오되, '확정 인원'만 추려냅니다.
+    raw_data = df.to_dict('records')
+    base_players = []
     
-    # 제외 포지션 파싱
+    for idx, p in enumerate(raw_data):
+        # [확정 조건]
+        # 1. 선착순 정원(MAX_CAPACITY) 안에 들었거나
+        # 2. 이름에 [VEGA]가 포함된 경우 (프리패스)
+        is_vega = "[VEGA]" in str(p.get('이름', ''))
+        if idx < MAX_CAPACITY or is_vega:
+            base_players.append(p)
+        else:
+            # 예비 인원은 라인업 생성에서 제외
+            continue
+            
+    # 제외 포지션 파싱 (기존 로직 계속)
     for p in base_players:
         ex_str = str(p.get('제외', ''))
         p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()] if ex_str else []
@@ -2188,18 +2202,68 @@ with tab7:
                 st.rerun()
         else: st.info("신청자 없음")
 
-        # ... (이하 연락처 복사, 게임 개설 등 기존 코드 유지) ...
+        # ... (이전 코드: 참가 현황 저장 버튼 등) ...
+        
         st.divider()
-        with st.expander("📞 참가자 전체 연락처 복사 (단체문자)"):
-            if apps:
-                phones = [p.get('연락처', '').strip() for p in apps if p.get('연락처')]
-                phones = [p for p in phones if p]
-                if phones:
-                    phone_string = ", ".join(phones)
-                    st.code(phone_string, language="text")
-                    st.caption(f"총 {len(phones)}명의 연락처입니다. 복사해서 문자 수신인에 붙여넣으세요.")
-                else: st.warning("연락처 정보가 없습니다.")
-            else: st.info("참가자가 없습니다.")
+        st.subheader("📨 단체 문자 발송 도우미")
+        
+        # 명단 분류 (확정 vs 대기)
+        if apps:
+            # 데이터 정리
+            p_df = pd.DataFrame(apps)
+            confirmed_list = []
+            waiting_list = []
+            
+            for idx, row in p_df.iterrows():
+                p_name = row['이름']
+                p_phone = str(row.get('연락처', '')).strip()
+                if not p_phone: continue
+                
+                # 확정 조건 (정원 내 or VEGA)
+                is_vega = "[VEGA]" in p_name
+                if idx < MAX_CAPACITY or is_vega:
+                    confirmed_list.append(p_phone)
+                else:
+                    waiting_list.append(p_phone)
+            
+            # 사이트 주소 (메시지에 넣을 용도)
+            # Streamlit Cloud 배포 주소로 변경해주세요!
+            SITE_URL = "https://volleyball-pickup.streamlit.app" 
+            
+            c1, c2 = st.columns(2)
+            
+            # 1. 확정 인원 문자
+            with c1:
+                st.info(f"✅ **경기 확정자 ({len(confirmed_list)}명)**")
+                if confirmed_list:
+                    # 연락처 묶음
+                    st.text("수신인 (복사해서 붙여넣기)")
+                    st.code(", ".join(confirmed_list), language="text")
+                    
+                    # 메시지 내용 (단문 최적화)
+                    msg_confirm = f"[여순광배구]\n금일 18:30 운동 예정.\n라인업 확인 바랍니다.\n{SITE_URL}"
+                    st.text("보낼 내용 (단문/LMS)")
+                    st.code(msg_confirm, language="text")
+                else:
+                    st.caption("확정된 인원이 없습니다.")
+
+            # 2. 대기 인원 문자
+            with c2:
+                st.error(f"⏳ **예비 대기자 ({len(waiting_list)}명)**")
+                if waiting_list:
+                    # 연락처 묶음
+                    st.text("수신인 (복사해서 붙여넣기)")
+                    st.code(", ".join(waiting_list), language="text")
+                    
+                    # 메시지 내용
+                    msg_wait = f"[여순광배구]\n금일 정원 초과로 '대기' 등록되었습니다.\n결원 발생 시 순서대로 연락드리겠습니다."
+                    st.text("보낼 내용")
+                    st.code(msg_wait, language="text")
+                else:
+                    st.caption("대기자가 없습니다.")
+                    
+        else:
+            st.info("신청자가 없습니다.")
 
 # --- 탭 7 내부 ---
         st.divider()
