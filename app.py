@@ -1511,7 +1511,7 @@ with tab1:
         if applicants:
             df_public = pd.DataFrame(applicants)
             
-            # --- [Tab 1 내부 코드 교체] ---
+            # --- [Tab 1 내부 코드 긴급 수정] ---
             st.markdown("##### 🚦 포지션 경쟁률 (정원 내)")
             
             # 상위 20명만 포지션 경쟁률에 반영
@@ -1523,23 +1523,24 @@ with tab1:
                 c2 = df_in_cap['2순위'].value_counts()
                 c3 = df_in_cap['3순위'].value_counts()
                 
-                # CSS 스타일 (그리드 레이아웃)
-                html_code = """
+                # CSS 스타일 (한 줄로 압축하여 오류 방지)
+                st.markdown("""
                 <style>
-                    .pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-bottom: 20px;}
-                    .pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
-                    .pos-title {font-size: 0.85em; color: #333; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;}
-                    .pos-main-count {font-size: 1.3em; font-weight: 900; color: #1565C0; margin-bottom: 4px;}
-                    .pos-sub-info {font-size: 0.65em; color: #666; display: flex; justify-content: space-around; background: #f9f9f9; border-radius: 4px; padding: 2px;}
-                    .sub-item {display: flex; flex-direction: column;}
-                    .sub-label {color: #999; font-size: 0.9em;}
-                    .sub-val {font-weight: bold; color: #444;}
-                    .status-badge {font-size: 0.7em; padding: 1px 4px; border-radius: 3px; margin-top: 4px; display: inline-block;}
-                    .s-safe {background:#E8F5E9; color:#2E7D32;}
-                    .s-warn {background:#FFF3E0; color:#E65100;}
+                .pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-bottom: 20px;}
+                .pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
+                .pos-title {font-size: 0.85em; color: #333; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;}
+                .pos-main-count {font-size: 1.3em; font-weight: 900; color: #1565C0; margin-bottom: 4px;}
+                .pos-sub-info {font-size: 0.65em; color: #666; display: flex; justify-content: space-around; background: #f9f9f9; border-radius: 4px; padding: 2px;}
+                .sub-item {display: flex; flex-direction: column;}
+                .sub-label {color: #999; font-size: 0.9em;}
+                .sub-val {font-weight: bold; color: #444;}
+                .status-badge {font-size: 0.7em; padding: 1px 4px; border-radius: 3px; margin-top: 4px; display: inline-block;}
+                .s-safe {background:#E8F5E9; color:#2E7D32;}
+                .s-warn {background:#FFF3E0; color:#E65100;}
                 </style>
-                <div class="pos-container">
-                """
+                """, unsafe_allow_html=True)
+                
+                html_code = '<div class="pos-container">'
                 
                 # 포지션 순서대로 카드 생성
                 for pos in POSITIONS_ALL:
@@ -1556,20 +1557,14 @@ with tab1:
                     val3_display = f"{cnt3}"
                     if pos not in POSITIONS_3RD: val3_display = "-"
                     
-                    html_code += f"""
-                    <div class="pos-card">
-                        <div class="pos-title">{pos} {status}</div>
-                        <div class="pos-main-count">{cnt1}<span style="font-size:0.6em; font-weight:normal; color:#888;">명(1)</span></div>
-                        <div class="pos-sub-info">
-                            <div class="sub-item"><span class="sub-label">2순위</span><span class="sub-val">{cnt2}</span></div>
-                            <div style="border-right:1px solid #ddd;"></div>
-                            <div class="sub-item"><span class="sub-label">3순위</span><span class="sub-val">{val3_display}</span></div>
-                        </div>
-                    </div>
-                    """
+                    # [핵심 수정] 들여쓰기(Indent) 없이 한 줄로 문자열 결합
+                    card_html = f"""<div class="pos-card"><div class="pos-title">{pos} {status}</div><div class="pos-main-count">{cnt1}<span style="font-size:0.6em; font-weight:normal; color:#888;">명(1)</span></div><div class="pos-sub-info"><div class="sub-item"><span class="sub-label">2순위</span><span class="sub-val">{cnt2}</span></div><div style="border-right:1px solid #ddd;"></div><div class="sub-item"><span class="sub-label">3순위</span><span class="sub-val">{val3_display}</span></div></div></div>"""
+                    
+                    html_code += card_html
+                    
                 html_code += "</div>"
                 
-                # [중요] HTML 렌더링
+                # HTML 렌더링
                 st.markdown(html_code, unsafe_allow_html=True)
                 
             st.divider()
