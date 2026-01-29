@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import base64  
 import os
 
-# [수정] UI 디자인 완전 복구 (알약 모양 복구 + 주황색 탭 분리 완벽 해결)
+# [수정] 모바일 최적화 CSS (디자인 복구 + 깔끔한 알약 스타일 통일)
 st.markdown("""
     <style>
         /* 1. 상단 헤더 숨기기 */
@@ -43,65 +43,36 @@ st.markdown("""
         div[data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
 
         /* ================================================================= */
-        /* [1단계: 디자인 복구] 모든 탭 버튼을 '알약 모양 + 회색/파랑'으로 통일 */
+        /* [디자인 통일] 모든 탭 버튼을 '알약 모양'으로 예쁘게 만듭니다. */
+        /* 복잡한 색상 구분 로직을 제거하여 오류를 원천 차단했습니다. */
         /* ================================================================= */
         button[data-baseweb="tab"] {
-            height: 40px !important;               /* 높이 고정 */
+            height: 40px !important;               
             min-height: 40px !important;
-            border-radius: 20px !important;        /* 둥근 알약 모양 복구 */
-            padding: 0 16px !important;
-            background-color: #f7f7f7 !important;  /* 기본 회색 */
+            border-radius: 20px !important;        /* 둥근 알약 모양 */
+            padding: 0 20px !important;            /* 넓은 여백 */
+            background-color: #f7f7f7 !important;  /* 평소: 회색 */
             border: 1px solid #eee !important;
             color: #666 !important;
             font-size: 14px !important;
-            font-weight: normal !important;
+            font-weight: 500 !important;
             flex: 0 0 auto;
+            transition: all 0.2s;                  /* 부드러운 효과 */
         }
         
-        /* 탭 선택됐을 때 (기본 파란색) */
+        /* 탭이 선택되었을 때 스타일 (파란색 강조) */
         button[data-baseweb="tab"][aria-selected="true"] {
-            background-color: #E3F2FD !important;  /* 연한 파랑 */
-            color: #1565C0 !important;             /* 진한 파랑 */
-            border-color: #1565C0 !important;
-            font-weight: bold !important;
-        }
-
-        /* ================================================================= */
-        /* [2단계: 주황색 강조] 2번째 탭은 일단 무조건 주황색으로 덮어씀 */
-        /* ================================================================= */
-        button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #FFF3E0 !important;  /* 연한 주황 */
-            color: #E65100 !important;             /* 진한 주황 */
-            border-color: #FF9800 !important;
-            font-weight: bold !important;
-        }
-        button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #FF9800 !important;  /* 쨍한 주황 */
-            color: white !important;               /* 흰색 글씨 */
-            border: none !important;
-        }
-
-        /* ================================================================= */
-        /* [3단계: 오류 수정] 탭 내용물(stTabContent) 안에 있는 2번째 탭은 */
-        /* 다시 회색/파랑색으로 강제 원상복구 (여기가 핵심!) */
-        /* ================================================================= */
-        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #f7f7f7 !important;  /* 다시 회색으로 */
-            color: #666 !important;
-            border: 1px solid #eee !important;
-            font-weight: normal !important;
-        }
-        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #E3F2FD !important;  /* 다시 파랑으로 */
-            color: #1565C0 !important;
-            border-color: #1565C0 !important;
-            font-weight: bold !important;
+            background-color: #E3F2FD !important;  /* 배경: 연한 파랑 */
+            color: #1565C0 !important;             /* 글씨: 진한 파랑 */
+            border: 1px solid #1565C0 !important;  /* 테두리: 파랑 */
+            font-weight: 800 !important;           /* 글씨 두껍게 */
+            transform: scale(1.02);                /* 살짝 커지는 효과 */
         }
 
         /* 텍스트 여백 제거 */
         button[data-baseweb="tab"] p { margin: 0; }
 
-        /* 신청 버튼 강조 */
+        /* 신청 버튼 강조 (파란색) */
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"] {
             background-color: #1565C0 !important;
             color: white !important;
