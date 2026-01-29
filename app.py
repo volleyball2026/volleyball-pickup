@@ -58,6 +58,7 @@ SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
 ADMIN_PASSWORD = "1992"
 SHEET_VIDEOS = "영상관리"  # [NEW] 유튜브 링크 저장용 시트
+SHEET_LOGS = "접속로그"  # [NEW] 로그 저장용 시트
 MAX_CAPACITY = 20  # [NEW] 최대 정원 설정
 
 # --- [업데이트 로그 데이터] ---
@@ -127,6 +128,29 @@ def get_sheet_instance(sheet_name):
     return None
 
 # --- [유틸리티] ---
+
+# [기능 함수 추가] 접속 로그 저장 함수
+def log_visit(action_type, user_info="익명"):
+    # 세션 상태를 확인해서, 이미 찍은 도장이면 또 찍지 않게 방지 (새로고침 남발 방지)
+    session_key = f"log_{action_type}"
+    
+    if session_key not in st.session_state:
+        sheet = get_sheet_instance(SHEET_LOGS)
+        if sheet:
+            try:
+                # 1. 시트가 비어있으면 헤더 생성
+                if not sheet.get_all_values():
+                    sheet.append_row(["일시", "유형", "접속자(추정)"])
+                
+                # 2. 로그 저장 (시간, 유형, 정보)
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                sheet.append_row([now_str, action_type, user_info])
+                
+                # 3. 세션에 기록 (이번 접속에서는 다시 카운트 안 함)
+                st.session_state[session_key] = True
+            except:
+                pass # 로그 저장 실패해도 앱은 멈추면 안 됨
+
 def normalize_phone(phone):
     if not phone: return ""
     phone = re.sub(r'\D', '', str(phone))
@@ -1080,6 +1104,11 @@ def generate_vega_priority_schedule(df):
 # --- [메인 화면] ---
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
+# [NEW] 사이트 접속 로그 기록 (방문자 수 카운트)
+# 사용자가 누구인지 추정 (신청 이력이 있으면 이름 기록)
+user_guess = st.session_state.get('my_name', '익명') 
+log_visit("메인접속", user_guess)
+
 # [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조)
 st.markdown("""
     <style>
@@ -1481,6 +1510,8 @@ with tab1:
             
 # --- 탭 2: 라인업 공개 ---
 with tab2:
+# [NEW] 라인업 조회 로그 기록
+    log_visit("라인업조회", st.session_state.get('my_name', '익명'))
     # 1. 게임 종료 체크
     if not current_game or current_game.get('제목') == 'CLOSED':
         st.header("📋 이번 주 라인업")
@@ -2150,6 +2181,40 @@ with tab6:
 with tab7:
     st.header("관리자 메뉴")
     admin_auth = st.empty()
+
+    if st.session_state['admin_logged_in']:
+        
+        # [NEW] 접속 통계 대시보드
+        st.subheader("📈 접속 통계 (오늘)")
+        
+        sheet_log = get_sheet_instance(SHEET_LOGS)
+        if sheet_log:
+            try:
+                logs = sheet_log.get_all_records()
+                if logs:
+                    df_log = pd.DataFrame(logs)
+                    
+                    # 오늘 날짜 필터링
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    # '일시' 컬럼에서 날짜 부분만 잘라서 비교
+                    df_log['날짜'] = df_log['일시'].apply(lambda x: x.split(" ")[0])
+                    df_today = df_log[df_log['날짜'] == today_str]
+                    
+                    # 통계 계산
+                    visit_count = len(df_today[df_today['유형'] == '메인접속'])
+                    lineup_count = len(df_today[df_today['유형'] == '라인업조회'])
+                    
+                    # 화면 표시
+                    m1, m2 = st.columns(2)
+                    m1.metric("오늘 방문자 수", f"{visit_count}명", delta="누적 접속")
+                    m2.metric("라인업 조회 수", f"{lineup_count}회", delta="관심도")
+                    
+                    with st.expander("📜 오늘 접속 로그 상세 보기"):
+                        st.dataframe(df_today[['일시', '유형', '접속자(추정)']], hide_index=True)
+                        
+            except Exception as e:
+                st.error("로그를 불러오는 중 오류가 발생했습니다.")
+    
     if not st.session_state['admin_logged_in']:
         with admin_auth.form("admin_main_login"):
             pw = st.text_input("비밀번호", type="password")
