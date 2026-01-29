@@ -784,17 +784,23 @@ def get_priority_score(player, global_history, global_hardship):
 
 # --- [알고리즘 수정 Ver 3.9.3] 유니크 포지션 보호 (슈퍼 세이브) ---
 # --- [알고리즘 수정 Ver 3.9.7] 9인제 포지션 고정 (속공 삭제 방지) ---
+# --- [알고리즘 수정] 유니크 보호 + 쿼터 유지 + 베가 강제 배정(Force Fill) 통합본 ---
 def assign_positions_in_team(team_members):
     # 1. 일단 점수순으로 정렬
     team_members.sort(key=lambda x: x['priority_score'], reverse=True)
     
+    # 초기화
     for p in team_members: 
         p['assigned_pos'] = None
         p['match_type'] = 'random'
     
     total_cnt = len(team_members)
     
-    # --- 유니크 포지션 보호 로직 (유지) ---
+    # ==========================================
+    # [기능 1: 유니크 포지션 보호 로직] (유지됨)
+    # 정원 초과 시, 후순위에 있는 희귀 포지션(세터, 속공 등) 희망자를 
+    # 선순위(Safe Zone)의 일반 포지션 희망자와 교체하여 살려줌
+    # ==========================================
     court_capacity = 9
     if total_cnt > court_capacity:
         safe_zone = team_members[:court_capacity]
@@ -804,22 +810,30 @@ def assign_positions_in_team(team_members):
         for p_drop in drop_zone:
             wish = str(p_drop.get('1순위', '')).strip()
             if wish in rare_positions:
+                # Safe Zone에 해당 포지션이 아예 없는지 확인
                 has_pos_in_safe = any(str(p.get('1순위', '')).strip() == wish for p in safe_zone)
                 if not has_pos_in_safe:
+                    # 교체 대상 찾기 (점수가 가장 낮은 사람부터)
                     swap_target_idx = -1
                     for i in range(len(safe_zone)-1, -1, -1):
                         p_safe = safe_zone[i]
-                        swap_target_idx = i
-                        break
+                        # 희귀 포지션 희망자가 아닌 사람을 찾음
+                        if str(p_safe.get('1순위', '')).strip() not in rare_positions:
+                            swap_target_idx = i
+                            break
                     
                     if swap_target_idx != -1:
+                        # 스왑 실행
                         idx_safe = team_members.index(safe_zone[swap_target_idx])
                         idx_drop = team_members.index(p_drop)
                         team_members[idx_safe], team_members[idx_drop] = team_members[idx_drop], team_members[idx_safe]
+                        # 구역 재설정
                         safe_zone = team_members[:court_capacity]
                         drop_zone = team_members[court_capacity:]
 
-    # 2. 쿼터 설정
+    # ==========================================
+    # [기능 2: 쿼터 및 속공 유지 설정] (유지됨)
+    # ==========================================
     starters = team_members[:9] if total_cnt >= 9 else team_members
     quotas = POSITION_QUOTAS.copy()
     
@@ -828,7 +842,7 @@ def assign_positions_in_team(team_members):
     
     team_size_court = len(starters)
     
-    # [핵심 수정] 9명 이상일 때는 쿼터 변경 절대 금지 (속공 유지)
+    # 9명 이상일 때는 쿼터 변경 금지 (속공 무조건 포함)
     if team_size_court >= 9:
         pass 
     elif team_size_court == 8:
@@ -839,11 +853,14 @@ def assign_positions_in_team(team_members):
     elif team_size_court == 6:
         quotas['속공'] = 0; quotas['센터백'] = 0; quotas['백차'] = 0
 
-    # 3. 배정 로직 (점수 높은 순)
+    # ==========================================
+    # [기능 3: 희망 포지션 배정] (1~3순위)
+    # ==========================================
     for p in team_members:
         for step in [1, 2, 3]:
             wish = str(p.get(f'{step}순위', '')).strip()
             if wish and wish != "선택 안함" and quotas.get(wish, 0) > 0:
+                # 제외 포지션이면 패스
                 if wish not in p.get('excluded', []):
                     p['assigned_pos'] = wish
                     quotas[wish] -= 1
@@ -853,11 +870,16 @@ def assign_positions_in_team(team_members):
                     elif step == 3: p['match_type'] = '3rd'
                     break
     
-    # 4. 남은 자리 (랜덤/대기)
+    # ==========================================
+    # [기능 4: 남은 자리 배정 & 베가 강제 배정]
+    # ==========================================
     for p in team_members:
+        # 아직 배정 못 받은 사람
         if not p['assigned_pos']:
             filled = False
             excluded_list = p.get('excluded', [])
+            
+            # 4-1. 일반 랜덤 배정 (제외 포지션은 안 들어감)
             for pos, q in quotas.items():
                 if q > 0 and pos not in excluded_list:
                     p['assigned_pos'] = pos
@@ -866,6 +888,19 @@ def assign_positions_in_team(team_members):
                     filled = True
                     break
             
+            # [기능 5: 베가 회원 전용 강제 배정 (Force Fill)]
+            # 조건: 아직 배정 안 됨(filled=False) AND 베가 회원("[VEGA]")
+            # 내용: 제외 포지션이고 뭐고 빈자리가 있으면 무조건 들어감
+            if not filled and "[VEGA]" in str(p.get('이름', '')):
+                for pos, q in quotas.items():
+                    if q > 0:
+                        p['assigned_pos'] = pos
+                        quotas[pos] -= 1
+                        p['match_type'] = 'random' # 시스템상 랜덤 취급
+                        filled = True
+                        break 
+            
+            # 그래도 자리가 없거나(꽉 참), 일반 회원이 제외 포지션만 남은 경우 -> 대기
             if not filled: 
                 p['assigned_pos'] = "대기"
                 p['match_type'] = 'wait'
