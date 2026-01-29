@@ -12,17 +12,17 @@ import plotly.graph_objects as go
 import base64  
 import os
 
-# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조 + 중첩 탭 완벽 격리)
+# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조 + 중첩 탭 완벽 해결)
 st.markdown("""
     <style>
-        /* 1. 상단 헤더 숨기기 & 여백 조정 */
+        /* 1. 상단 헤더 숨기기 */
         header {visibility: hidden;}
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 5rem !important;
         }
 
-        /* 2. 탭 네비게이션 바 고정 (Sticky) */
+        /* 2. 탭 네비게이션 바 고정 */
         div[data-testid="stTabsNav"] {
             position: sticky;
             top: 0;
@@ -32,7 +32,7 @@ st.markdown("""
             border-bottom: 1px solid #f0f0f0;
         }
 
-        /* 3. 탭 리스트: 가로 스크롤 활성화 */
+        /* 3. 탭 리스트 가로 스크롤 */
         div[data-baseweb="tab-list"] {
             gap: 8px;
             overflow-x: auto;
@@ -40,11 +40,11 @@ st.markdown("""
             white-space: nowrap;
             scrollbar-width: none;
             padding-bottom: 5px;
-            padding-left: 5px; /* 좌측 여백 */
+            padding-left: 5px;
         }
         div[data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
 
-        /* 4. 기본 탭 버튼 디자인 (알약 모양) - 모든 탭에 적용 */
+        /* 4. [기본] 모든 탭 버튼: 알약 모양 + 회색 */
         button[data-baseweb="tab"] {
             height: 36px;
             min-height: 36px;
@@ -58,47 +58,35 @@ st.markdown("""
         }
 
         /* ----------------------------------------------------------- */
-        /* [핵심 1] 메인 메뉴(바깥쪽)의 2번째 '참가 신청' 탭만 주황색 강조 */
+        /* [1단계] 무조건 2번째 탭은 '주황색'으로 칠한다 (일단 전부 다) */
         /* ----------------------------------------------------------- */
         button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #FFF3E0 !important; /* 연한 주황 배경 */
-            color: #E65100 !important;             /* 진한 주황 글씨 */
-            border: 1px solid #FF9800 !important;  /* 주황 테두리 */
+            background-color: #FFF3E0 !important; 
+            color: #E65100 !important;             
+            border: 1px solid #FF9800 !important;  
             font-weight: bold !important;
         }
         button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #FF9800 !important; /* 쨍한 주황 배경 */
-            color: white !important;              /* 흰색 글씨 */
+            background-color: #FF9800 !important; 
+            color: white !important;              
             border: none !important;
         }
 
         /* ----------------------------------------------------------- */
-        /* [핵심 2] 나머지 탭 선택 스타일 (파란색) */
-        /* ----------------------------------------------------------- */
-        button[data-baseweb="tab"][aria-selected="true"]:not(:nth-of-type(2)) {
-            background-color: #E3F2FD !important;
-            color: #1565C0 !important;
-            border-color: #1565C0 !important;
-            font-weight: bold;
-        }
-        
-        button[data-baseweb="tab"] p { margin: 0; }
-
-        /* ----------------------------------------------------------- */
-        /* [핵심 3] 중첩된 탭(세트 탭) 무조건 초기화 (주황색 침범 방지) */
-        /* 설명: stTabContent(내용물) 안에 들어있는 탭 버튼은 순서 상관없이 무조건 회색/파랑으로 강제 변경 */
+        /* [2단계] 그런데, '탭 내용물(content)' 안에 있는 놈들은 다시 '회색/파랑'으로 덮어쓴다 */
+        /* (이게 핵심입니다. 1단계에서 칠한 주황색을 여기서 취소합니다) */
         /* ----------------------------------------------------------- */
         
-        /* 3-1. 중첩된 모든 탭 버튼 -> 회색 (주황색 덮어쓰기) */
-        div[data-testid="stTabContent"] div[data-testid="stTabsNav"] button[data-baseweb="tab"] {
+        /* 내용물 안쪽의 2번째 탭 -> 다시 회색으로 (주황색 취소) */
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2) {
             background-color: #f7f7f7 !important; 
             color: #666 !important;               
             border: 1px solid #eee !important;    
             font-weight: normal !important;       
         }
 
-        /* 3-2. 중첩된 탭 버튼이 선택되었을 때 -> 파란색 (주황색 덮어쓰기) */
-        div[data-testid="stTabContent"] div[data-testid="stTabsNav"] button[data-baseweb="tab"][aria-selected="true"] {
+        /* 내용물 안쪽의 2번째 탭이 선택됐을 때 -> 다시 파란색으로 (주황색 취소) */
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
             background-color: #E3F2FD !important; 
             color: #1565C0 !important;            
             border-color: #1565C0 !important;     
@@ -106,8 +94,18 @@ st.markdown("""
         }
 
         /* ----------------------------------------------------------- */
-        /* [핵심 4] 신청하기 버튼 강조 */
+        /* [기타] 나머지 탭 선택 스타일 (파란색) */
         /* ----------------------------------------------------------- */
+        button[data-baseweb="tab"][aria-selected="true"]:not(:nth-of-type(2)) {
+            background-color: #E3F2FD !important;
+            color: #1565C0 !important;
+            border-color: #1565C0 !important;
+            font-weight: bold;
+        }
+
+        button[data-baseweb="tab"] p { margin: 0; }
+
+        /* 신청 버튼 디자인 */
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"] {
             background-color: #1565C0 !important;
             color: white !important;
@@ -117,7 +115,6 @@ st.markdown("""
             font-size: 1.1rem !important;
             font-weight: 800 !important;
             box-shadow: 0 4px 6px rgba(0,0,0,0.2) !important;
-            transition: all 0.2s ease-in-out;
             width: 100% !important;
         }
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:active {
@@ -126,7 +123,6 @@ st.markdown("""
 
     </style>
 """, unsafe_allow_html=True)
-
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
