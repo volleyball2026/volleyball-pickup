@@ -1960,6 +1960,44 @@ with tab6:
     st.header("⚡ 공정 라인업 생성")
     
     lineup_auth = st.empty()
+
+    # [1] 로그인 안 된 상태 (로그인 폼 표시)
+    if not st.session_state.get('admin_logged_in', False):
+        st.warning("⚠️ 관리자 권한이 필요한 메뉴입니다.")
+        
+        # 폼 이름(key)이 겹치지 않게 "lineup_login_form"으로 지정
+        with st.form("lineup_login_form"):
+            pw = st.text_input("비밀번호", type="password")
+            
+            # [추가됨] 로그인 유지 체크박스
+            keep_login = st.checkbox("로그인 상태 유지하기 (체크 필수)", value=True)
+            
+            if st.form_submit_button("관리자 로그인"):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state['admin_logged_in'] = True
+                    st.toast("관리자 인증 성공!", icon="⚡")
+                    
+                    # [핵심] 체크했으면 주소창에 도장 찍기 (?auth=비번)
+                    if keep_login:
+                        st.query_params["auth"] = ADMIN_PASSWORD
+                    
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 일치하지 않습니다.")
+
+    # [2] 로그인 성공 상태 (기존 라인업 생성 기능)
+    else:
+        # -----------------------------------------------------------
+        # (여기 아래부터는 기존에 쓰시던 라인업 생성 코드가 그대로 들어갑니다)
+        # -----------------------------------------------------------
+        
+        # 혹시 로그아웃 버튼이 필요하면 추가 (선택사항)
+        if st.button("로그아웃", key="logout_tab6"):
+            st.session_state['admin_logged_in'] = False
+            st.query_params.clear() # 도장 지우기
+            st.rerun()
+            
+        st.info("관리자 권한으로 접속 중입니다.")
     
     if not st.session_state.get('lineup_admin_logged_in', False):
         with lineup_auth.form("lineup_login"):
