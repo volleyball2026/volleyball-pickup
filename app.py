@@ -1511,7 +1511,7 @@ with tab1:
         if applicants:
             df_public = pd.DataFrame(applicants)
             
-            # --- [Tab 1 내부 코드 긴급 수정] ---
+            # --- [Tab 1 내부 코드 개선] ---
             st.markdown("##### 🚦 포지션 경쟁률 (정원 내)")
             
             # 상위 20명만 포지션 경쟁률에 반영
@@ -1523,18 +1523,39 @@ with tab1:
                 c2 = df_in_cap['2순위'].value_counts()
                 c3 = df_in_cap['3순위'].value_counts()
                 
-                # CSS 스타일 (한 줄로 압축하여 오류 방지)
+                # CSS 스타일 (가독성 개선: 서브 숫자 크기 확대)
                 st.markdown("""
                 <style>
                 .pos-container {display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-bottom: 20px;}
-                .pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
-                .pos-title {font-size: 0.85em; color: #333; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;}
-                .pos-main-count {font-size: 1.3em; font-weight: 900; color: #1565C0; margin-bottom: 4px;}
-                .pos-sub-info {font-size: 0.65em; color: #666; display: flex; justify-content: space-around; background: #f9f9f9; border-radius: 4px; padding: 2px;}
-                .sub-item {display: flex; flex-direction: column;}
-                .sub-label {color: #999; font-size: 0.9em;}
-                .sub-val {font-weight: bold; color: #444;}
-                .status-badge {font-size: 0.7em; padding: 1px 4px; border-radius: 3px; margin-top: 4px; display: inline-block;}
+                .pos-card {background-color: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px 4px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08);}
+                
+                /* 제목 스타일 */
+                .pos-title {font-size: 0.9em; color: #444; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid #f0f0f0; padding-bottom: 6px;}
+                
+                /* 메인 숫자 (1순위) */
+                .pos-main-count {font-size: 1.6em; font-weight: 900; color: #1565C0; margin-bottom: 8px; line-height: 1;}
+                
+                /* 서브 정보 박스 (2,3순위) */
+                .pos-sub-info {
+                    font-size: 0.85em; /* 전체 폰트 키움 */
+                    color: #555; 
+                    display: flex; 
+                    justify-content: space-around; 
+                    align-items: center;
+                    background: #F5F7FA; /* 배경색을 더 뚜렷하게 */
+                    border-radius: 6px; 
+                    padding: 6px 2px;
+                }
+                .sub-item {display: flex; flex-direction: column; align-items: center; width: 45%;}
+                
+                /* 서브 라벨 (2순위, 3순위 글자) */
+                .sub-label {color: #888; font-size: 0.75em; margin-bottom: 2px;}
+                
+                /* 서브 숫자 (값) - 크고 진하게 변경 */
+                .sub-val {font-size: 1.1em; font-weight: 800; color: #333;}
+                
+                /* 상태 뱃지 */
+                .status-badge {font-size: 0.7em; padding: 2px 5px; border-radius: 4px; margin-left: 4px; vertical-align: middle;}
                 .s-safe {background:#E8F5E9; color:#2E7D32;}
                 .s-warn {background:#FFF3E0; color:#E65100;}
                 </style>
@@ -1553,18 +1574,18 @@ with tab1:
                     elif cnt1 == 0: status = "<span class='status-badge s-safe'>빈집</span>"
                     else: status = "<span class='status-badge s-safe'>여유</span>"
                     
-                    # 3순위는 가능한 포지션만 숫자 표시
+                    # 3순위 표시 여부
                     val3_display = f"{cnt3}"
                     if pos not in POSITIONS_3RD: val3_display = "-"
                     
-                    # [핵심 수정] 들여쓰기(Indent) 없이 한 줄로 문자열 결합
-                    card_html = f"""<div class="pos-card"><div class="pos-title">{pos} {status}</div><div class="pos-main-count">{cnt1}<span style="font-size:0.6em; font-weight:normal; color:#888;">명(1)</span></div><div class="pos-sub-info"><div class="sub-item"><span class="sub-label">2순위</span><span class="sub-val">{cnt2}</span></div><div style="border-right:1px solid #ddd;"></div><div class="sub-item"><span class="sub-label">3순위</span><span class="sub-val">{val3_display}</span></div></div></div>"""
+                    # [수정 1] 메인 숫자 옆에 '(1)' 삭제함 -> 깔끔하게 '명'만 남김
+                    # [수정 2] 서브 숫자 클래스 적용 및 구조 개선
+                    card_html = f"""<div class="pos-card"><div class="pos-title">{pos} {status}</div><div class="pos-main-count">{cnt1}<span style="font-size:0.5em; font-weight:normal; color:#999; margin-left:2px;">명</span></div><div class="pos-sub-info"><div class="sub-item"><span class="sub-label">2순위</span><span class="sub-val">{cnt2}</span></div><div style="border-right:1px solid #ddd; height:20px;"></div><div class="sub-item"><span class="sub-label">3순위</span><span class="sub-val">{val3_display}</span></div></div></div>"""
                     
                     html_code += card_html
                     
                 html_code += "</div>"
                 
-                # HTML 렌더링
                 st.markdown(html_code, unsafe_allow_html=True)
                 
             st.divider()
