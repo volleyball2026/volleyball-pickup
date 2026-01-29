@@ -585,14 +585,13 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
-# --- [UI 함수] 신청자 목록 카드 디자인 (모바일 2열 그리드 적용) ---
+# --- [UI 함수] 신청자 목록 카드 디자인 (모바일 2열 "플레이어 카드" 스타일) ---
 def render_applicant_list_html(df):
     if df.empty:
         return "<div style='text-align:center; padding:20px; color:#999;'>아직 신청자가 없습니다.</div>"
     
-    # [핵심 변경] Flex Column -> Grid (2열 고정)
-    # grid-template-columns: 1fr 1fr; -> 무조건 반반씩 나눠서 한 줄에 2명 배치
-    html_code = "<div style='display: grid; grid-template-columns: 1fr 1fr; gap: 8px;'>"
+    # 2열 그리드 (간격 10px)
+    html_code = "<div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>"
     
     for _, row in df.iterrows():
         # 데이터 추출
@@ -606,45 +605,54 @@ def render_applicant_list_html(df):
         is_vega = "[VEGA]" in name
         display_name = name.replace("[VEGA]", "").strip()
         
-        # 뱃지 및 상태 아이콘
-        vega_badge = "<span style='background:#1565C0; color:white; font-size:0.6em; padding:1px 3px; border-radius:3px; margin-right:3px; vertical-align:middle;'>V</span>" if is_vega else ""
-        
         if status_bool:
             status_icon = "✅"
             bg_color = "#FFFFFF"
-            border_color = "#EEEEEE"
+            border_color = "#E0E0E0"
+            opacity = "1.0"
         else:
-            status_icon = "⏳" 
-            bg_color = "#FAFAFA"
-            border_color = "#FFF3E0" # 미입금 시 테두리 살짝 강조
+            status_icon = "⏳"
+            bg_color = "#F9F9F9" # 살짝 회색
+            border_color = "#EEEEEE"
+            opacity = "0.7" # 흐릿하게 처리
             
-        sub_status = ""
+        # 뱃지 (VEGA / 대기 / 지각) - 카드 상단에 표시
+        top_badges = ""
+        if is_vega:
+            top_badges += "<span style='background:#1565C0; color:white; font-size:0.6rem; padding:2px 5px; border-radius:10px; margin-right:2px;'>VEGA</span>"
         if "예비" in note:
-            sub_status = "<span style='color:#E65100; font-size:0.7em; background:#FFF3E0; padding:1px 3px; border-radius:3px; margin-left:2px;'>대기</span>"
+            top_badges += "<span style='background:#FFF3E0; color:#E65100; font-size:0.6rem; padding:2px 5px; border-radius:10px;'>대기</span>"
         elif "지각" in note:
-            sub_status = "<span style='color:#D32F2F; font-size:0.7em; background:#FFEBEE; padding:1px 3px; border-radius:3px; margin-left:2px;'>지각</span>"
+            top_badges += "<span style='background:#FFEBEE; color:#D32F2F; font-size:0.6rem; padding:2px 5px; border-radius:10px;'>지각</span>"
 
-        # [디자인 수정] 좁은 폭에 맞춘 컴팩트 카드
+        # [디자인 핵심] 가운데 정렬 + 이름 확대
         card = (
-            f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; "
-            f"padding: 10px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative;'>"
+            f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; "
+            f"padding: 12px 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; opacity: {opacity}; position: relative;'>"
             
-            # 1. 상단: 포지션 아이콘 + 상태 아이콘
-            f"  <div style='display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;'>"
-            f"    <div style='width: 28px; height: 28px; border-radius: 50%; background-color: #F5F5F5; "
-            f"    color: #555; display: flex; align-items: center; justify-content: center; "
-            f"    font-weight: bold; font-size: 0.8em; border: 1px solid #E0E0E0;'>{pos[:1]}</div>"
-            f"    <div style='font-size: 0.85em;'>{status_icon}</div>"
+            # 1. 우측 상단 상태 아이콘 (절대 위치)
+            f"  <div style='position: absolute; top: 8px; right: 8px; font-size: 0.8em;'>{status_icon}</div>"
+            
+            # 2. 포지션 아이콘 (가운데 크게)
+            f"  <div style='display: flex; justify-content: center; margin-bottom: 6px;'>"
+            f"    <div style='width: 35px; height: 35px; border-radius: 50%; background-color: #f0f2f6; "
+            f"    color: #444; display: flex; align-items: center; justify-content: center; "
+            f"    font-weight: 800; font-size: 1.0em; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
+            f"      {pos[:1]}"
+            f"    </div>"
             f"  </div>"
             
-            # 2. 하단: 이름 + 레벨/정보
-            f"  <div style='display: flex; flex-direction: column;'>"
-            f"    <div style='font-weight: bold; font-size: 0.9em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>"
-            f"      {vega_badge}{display_name}"
-            f"    </div>"
-            f"    <div style='font-size: 0.75em; color: #888; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>"
-            f"      {level} · {pos} {sub_status}"
-            f"    </div>"
+            # 3. 뱃지 (이름 위)
+            f"  <div style='margin-bottom: 4px; min-height: 15px;'>{top_badges}</div>"
+            
+            # 4. 이름 (크고 진하게)
+            f"  <div style='font-size: 1.1em; font-weight: 800; color: #222; margin-bottom: 2px; letter-spacing: -0.5px;'>"
+            f"    {display_name}"
+            f"  </div>"
+            
+            # 5. 레벨/포지션 (작게)
+            f"  <div style='font-size: 0.75em; color: #888; letter-spacing: -0.3px;'>"
+            f"    {level} · {pos}"
             f"  </div>"
             
             f"</div>"
