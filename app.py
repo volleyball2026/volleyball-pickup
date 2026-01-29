@@ -101,6 +101,26 @@ SHEET_BLACKLIST = "블랙리스트"
 SHEET_MVP = "MVP투표"
 SHEET_SUGGESTION = "건의함"
 ADMIN_PASSWORD = "1992"
+# ------------------------------------------------------------------
+# [NEW] 새로고침 해도 로그인 유지하기 (자동 로그인 로직)
+# ------------------------------------------------------------------
+# 1. 세션 상태 초기화
+if 'admin_logged_in' not in st.session_state:
+    st.session_state['admin_logged_in'] = False
+
+# 2. 주소창(URL)에 인증 도장(?auth=비밀번호)이 있는지 확인
+# (주의: 보안상 완벽하지 않지만, 편의성을 위해 이 방식을 사용합니다)
+try:
+    # URL에서 'auth' 값 가져오기
+    query_params = st.query_params
+    auth_token = query_params.get("auth", "")
+    
+    # 도장이 맞으면 -> 로그인 상태로 변경
+    if auth_token == ADMIN_PASSWORD:
+        st.session_state['admin_logged_in'] = True
+except:
+    pass
+# ------------------------------------------------------------------
 SHEET_VIDEOS = "영상관리"  # [NEW] 유튜브 링크 저장용 시트
 SHEET_LOGS = "접속로그"  # [NEW] 로그 저장용 시트
 MAX_CAPACITY = 20  # [NEW] 최대 정원 설정
@@ -2176,6 +2196,35 @@ with tab6:
 with tab7:
     st.header("⚙️ 관리자 페이지")
     admin_auth = st.empty()
+
+    # [1] 로그인 화면
+    if not st.session_state['admin_logged_in']:
+        with admin_auth.form("admin_main_login"):
+            pw = st.text_input("비밀번호", type="password")
+            
+            # [수정] '로그인 유지' 체크박스 추가
+            keep_login = st.checkbox("로그인 상태 유지하기 (체크 필수)", value=True)
+            
+            if st.form_submit_button("확인"):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state['admin_logged_in'] = True
+                    st.toast("관리자 모드 접속", icon="🔓")
+                    
+                    # [핵심] 체크했으면 주소창에 도장 찍기 (?auth=비번)
+                    if keep_login:
+                        st.query_params["auth"] = ADMIN_PASSWORD
+                    
+                    admin_auth.empty()
+                    st.rerun()
+                else: 
+                    st.error("비밀번호가 일치하지 않습니다.")
+    
+    # [로그아웃 버튼 추가] (로그인 상태일 때)
+    if st.session_state['admin_logged_in']:
+        if st.button("로그아웃 (도장 지우기)", key="logout_btn"):
+            st.session_state['admin_logged_in'] = False
+            st.query_params.clear() # 주소창 도장 삭제
+            st.rerun()
 
     # [1] 로그인 화면 (비로그인 상태)
     if not st.session_state['admin_logged_in']:
