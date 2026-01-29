@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import base64  
 import os
 
-# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조 + 중첩 탭 완벽 해결)
+# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조 + 탭 색상 완벽 분리)
 st.markdown("""
     <style>
         /* 1. 상단 헤더 숨기기 */
@@ -44,7 +44,7 @@ st.markdown("""
         }
         div[data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
 
-        /* 4. [기본] 모든 탭 버튼: 알약 모양 + 회색 */
+        /* 4. [기본] 모든 탭 버튼: 알약 모양 + 회색 (일단 다 회색으로 통일) */
         button[data-baseweb="tab"] {
             height: 36px;
             min-height: 36px;
@@ -57,50 +57,31 @@ st.markdown("""
             flex: 0 0 auto;
         }
 
+        /* 5. [기본] 탭 선택됐을 때: 파란색 (일단 다 파란색으로 통일) */
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background-color: #E3F2FD !important;
+            color: #1565C0 !important;
+            border-color: #1565C0 !important;
+            font-weight: bold;
+        }
+
         /* ----------------------------------------------------------- */
-        /* [1단계] 무조건 2번째 탭은 '주황색'으로 칠한다 (일단 전부 다) */
+        /* [핵심 수정] "화면 맨 위에 있는 첫 번째 탭바"의 "2번째 버튼"만 주황색으로 변경 */
+        /* 설명: :first-of-type을 써서 메인 메뉴만 골라내고, 나머지는 건드리지 않습니다. */
         /* ----------------------------------------------------------- */
-        button[data-baseweb="tab"]:nth-of-type(2) {
+        
+        div[data-testid="stTabsNav"]:first-of-type button[data-baseweb="tab"]:nth-of-type(2) {
             background-color: #FFF3E0 !important; 
             color: #E65100 !important;             
             border: 1px solid #FF9800 !important;  
             font-weight: bold !important;
         }
-        button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
+        
+        /* 메인 메뉴 2번째 탭이 선택됐을 때 */
+        div[data-testid="stTabsNav"]:first-of-type button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
             background-color: #FF9800 !important; 
             color: white !important;              
             border: none !important;
-        }
-
-        /* ----------------------------------------------------------- */
-        /* [2단계] 그런데, '탭 내용물(content)' 안에 있는 놈들은 다시 '회색/파랑'으로 덮어쓴다 */
-        /* (이게 핵심입니다. 1단계에서 칠한 주황색을 여기서 취소합니다) */
-        /* ----------------------------------------------------------- */
-        
-        /* 내용물 안쪽의 2번째 탭 -> 다시 회색으로 (주황색 취소) */
-        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2) {
-            background-color: #f7f7f7 !important; 
-            color: #666 !important;               
-            border: 1px solid #eee !important;    
-            font-weight: normal !important;       
-        }
-
-        /* 내용물 안쪽의 2번째 탭이 선택됐을 때 -> 다시 파란색으로 (주황색 취소) */
-        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
-            background-color: #E3F2FD !important; 
-            color: #1565C0 !important;            
-            border-color: #1565C0 !important;     
-            font-weight: bold !important;
-        }
-
-        /* ----------------------------------------------------------- */
-        /* [기타] 나머지 탭 선택 스타일 (파란색) */
-        /* ----------------------------------------------------------- */
-        button[data-baseweb="tab"][aria-selected="true"]:not(:nth-of-type(2)) {
-            background-color: #E3F2FD !important;
-            color: #1565C0 !important;
-            border-color: #1565C0 !important;
-            font-weight: bold;
         }
 
         button[data-baseweb="tab"] p { margin: 0; }
@@ -123,6 +104,7 @@ st.markdown("""
 
     </style>
 """, unsafe_allow_html=True)
+
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
