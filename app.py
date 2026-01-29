@@ -1982,7 +1982,7 @@ with tab6:
 
     # [2] 로그인 성공 상태
     else:
-        # 로그아웃 버튼
+        # 상단 네비게이션
         c_info, c_logout = st.columns([4, 1])
         with c_info: st.info("🔓 관리자 권한으로 접속 중입니다.")
         with c_logout:
@@ -1991,7 +1991,7 @@ with tab6:
                 st.query_params.clear()
                 st.rerun()
 
-        # 컨닝페이퍼 및 공유 텍스트
+        # 점수 규칙 설명
         with st.expander("ℹ️ 점수 계산 규칙 (컨닝페이퍼)", expanded=False):
             st.markdown("""
             | 항목 | 점수 | 설명 |
@@ -2008,6 +2008,7 @@ with tab6:
         else:
             df = pd.DataFrame(data)
             
+            # 카톡 공유
             with st.expander("💬 카카오톡 공유 텍스트 생성 (클릭)"):
                 try:
                     kakao_txt = generate_kakao_text(df)
@@ -2016,21 +2017,80 @@ with tab6:
             
             st.divider()
 
-            # [라인업 생성 버튼]
-            if st.button("🚀 라인업 다시 생성 (알고리즘 실행)", type="primary"):
-                with st.spinner("최적의 밸런스를 계산 중입니다..."): 
-                    df_clean = df.copy()
-                    cols_to_clean = []
-                    for i in range(1, 5): cols_to_clean.extend([f"팀{i}", f"확정{i}"])
-                    for col in cols_to_clean:
-                        if col in df_clean.columns: df_clean[col] = ""
-                    
-                    st.session_state['fair_results'] = generate_vega_priority_schedule(df_clean)
-                    st.success("생성 완료! 아래에서 확인 후 '저장'하세요.")
+            # [핵심 기능 1] 라인업 생성 및 새로고침 버튼
+            col_gen, col_refresh = st.columns([3, 1])
+            with col_gen:
+                if st.button("🚀 라인업 다시 생성 (알고리즘 실행)", type="primary", use_container_width=True):
+                    with st.spinner("최적의 밸런스를 계산 중입니다..."): 
+                        df_clean = df.copy()
+                        # 기존 배정 정보 초기화 후 재생성
+                        cols_to_clean = []
+                        for i in range(1, 5): cols_to_clean.extend([f"팀{i}", f"확정{i}"])
+                        for col in cols_to_clean:
+                            if col in df_clean.columns: df_clean[col] = ""
+                        
+                        st.session_state['fair_results'] = generate_vega_priority_schedule(df_clean)
+                        st.success("생성 완료! 아래에서 확인 후 '저장'하세요.")
+            
+            with col_refresh:
+                # [복구 버튼] 화면이 안 뜰 때 누르면 시트 데이터 강제 로드
+                if st.button("🔄 시각화 새로고침", use_container_width=True):
+                    if 'fair_results' in st.session_state:
+                        del st.session_state['fair_results']
+                    st.rerun()
 
-            # [시각화 복구 핵심] 결과 표시 로직
+            # [핵심 로직] 데이터 복구 (Restore) - 시트에 데이터가 있는데 화면에 없으면 복구
+            if 'fair_results' not in st.session_state and '확정1' in df.columns:
+                # 데이터가 실제로 있는지 확인
+                if df['확정1'].astype(str).str.strip().any():
+                    try:
+                        restored_results = {}
+                        base_players = df.to_dict('records')
+                        
+                        # 히스토리 추적용 임시 변수
+                        d_hist = {p['이름']: 0 for p in base_players}
+                        d_hard = {p['이름']: 0 for p in base_players}
+                        
+                        for r in range(1, 5):
+                            col_team = f"팀{r}"
+                            col_pos = f"확정{r}"
+                            team_a = []
+                            team_b = []
+                            
+                            # 점수 계산 (현재 상태 기준)
+                            score_map = {}
+                            for p in base_players:
+                                sc, re_val = get_priority_score(p, d_hist, d_hard)
+                                score_map[p['이름']] = (sc, re_val)
+
+                            for _, row in df.iterrows():
+                                p_name = row['이름']
+                                assigned = str(row.get(col_pos, '')).strip()
+                                team_val = str(row.get(col_team, '')).strip()
+                                
+                                if not assigned: continue
+                                
+                                p_data = row.to_dict()
+                                p_data['assigned_pos'] = assigned
+                                
+                                # 점수 정보 주입
+                                if p_name in score_map:
+                                    p_data['priority_score'] = score_map[p_name][0]
+                                    p_data['score_reason'] = score_map[p_name][1]
+                                
+                                if team_val == "A팀": team_a.append(p_data)
+                                elif team_val == "B팀": team_b.append(p_data)
+                                elif assigned == "대기": team_b.append(p_data) # 대기는 B팀 쪽에 표시
+
+                            restored_results[r] = (team_a, team_b)
+                        
+                        st.session_state['fair_results'] = restored_results
+                    except Exception as e:
+                        st.error(f"데이터 복구 중 오류: {e}")
+
+            # [시각화 표시]
             if 'fair_results' in st.session_state:
-                # 결과 매핑
+                # 결과 매핑 (화면 -> 데이터프레임 싱크)
                 schedule_map = {name: {} for name in df['이름']}
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
@@ -2048,13 +2108,13 @@ with tab6:
                             df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
                             df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
                 
-                # 탭별 시각화 (Court View 복구)
+                # 탭별 시각화 (Court View)
                 r_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
                 for i, tab in enumerate(r_tabs, 1):
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 점수 합계 계산 함수
+                        # 점수 합계
                         def calculate_team_sum(team_list):
                             total = 0
                             for p in team_list:
@@ -2068,7 +2128,7 @@ with tab6:
                         count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
                         count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
                         
-                        # 제외 포지션 표시 함수
+                        # 제외 포지션 체크
                         def get_missing_pos_list(player_list):
                             current_pos = set()
                             for p in player_list:
@@ -2085,7 +2145,7 @@ with tab6:
 
                         st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}** (🔴A제외: {miss_txt_a} | 🔵B제외: {miss_txt_b})")
                         
-                        # 점수판 (Metric)
+                        # 전력 밸런스 바
                         b_col1, b_col2 = st.columns([1, 4])
                         with b_col1:
                             diff = sum_a - sum_b
@@ -2097,13 +2157,11 @@ with tab6:
                             st.progress(min(sum_a / max_possible, 1.0))
                             st.progress(min(sum_b / max_possible, 1.0))
 
-                        # --- 관리자용 작전판 (Court View) 출력 ---
+                        # 작전판 출력
                         st.markdown("### 🏟️ Court View")
-                        
                         df_a = pd.DataFrame(team_a)
                         df_b = pd.DataFrame(team_b)
                         
-                        # [복구] render_tactical_board 호출
                         html_a = render_tactical_board(df_a, "A팀", "assigned_pos")
                         st.markdown(html_a, unsafe_allow_html=True)
                         
@@ -2112,7 +2170,7 @@ with tab6:
                         html_b = render_tactical_board(df_b, "B팀", "assigned_pos")
                         st.markdown(html_b, unsafe_allow_html=True)
                         
-                        # 대기 선수 명단 (예쁘게 표시)
+                        # 대기 인원
                         bench = [p for p in team_a+team_b if p['assigned_pos']=="대기"]
                         if bench:
                             st.divider()
@@ -2133,19 +2191,25 @@ with tab6:
             st.subheader("🛠️ 결과 수정 및 확정")
             st.warning("수정 후 반드시 '저장' 버튼을 눌러야 일반 사용자에게 공개됩니다.")
             
+            # 에디터
             cols = ["이름", "레벨", "1순위", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "팀4", "확정4", "비고"]
             valid_cols = [c for c in cols if c in df.columns]
             
             edited_df = st.data_editor(df[valid_cols], hide_index=True, num_rows="dynamic")
             
+            # [수정] 저장 버튼: 누르면 session_state를 날려서 강제 갱신 유도
             if st.button("💾 저장 (공개)", type="primary"):
                 final_df = df.copy()
                 final_df.update(edited_df)
                 update_lineup(final_df)
-                st.success("저장되었습니다! '라인업 공개' 탭에서 확인하세요.")
+                
+                # [핵심] 화면 기억 지우기 -> 재로딩 시 시트 데이터(수정본) 불러옴
+                if 'fair_results' in st.session_state:
+                    del st.session_state['fair_results']
+                    
+                st.success("저장되었습니다! 화면이 갱신됩니다.")
                 time.sleep(1.0)
                 st.rerun()
-
 
 # --- 탭 7: 관리자 ---
 with tab7:
