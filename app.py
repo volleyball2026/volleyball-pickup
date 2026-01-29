@@ -129,7 +129,7 @@ def get_sheet_instance(sheet_name):
 
 # --- [유틸리티] ---
 
-# [기능 함수 추가] 접속 로그 저장 함수
+# [기능 함수] 접속 로그 저장 함수 (한국 시간 적용 수정본)
 def log_visit(action_type, user_info="익명"):
     # 세션 상태를 확인해서, 이미 찍은 도장이면 또 찍지 않게 방지 (새로고침 남발 방지)
     session_key = f"log_{action_type}"
@@ -142,8 +142,11 @@ def log_visit(action_type, user_info="익명"):
                 if not sheet.get_all_values():
                     sheet.append_row(["일시", "유형", "접속자(추정)"])
                 
-                # 2. 로그 저장 (시간, 유형, 정보)
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # [수정 부분] UTC 시간에 9시간을 더해 한국 시간(KST) 생성
+                now_kst = datetime.utcnow() + timedelta(hours=9)
+                now_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 2. 로그 저장
                 sheet.append_row([now_str, action_type, user_info])
                 
                 # 3. 세션에 기록 (이번 접속에서는 다시 카운트 안 함)
