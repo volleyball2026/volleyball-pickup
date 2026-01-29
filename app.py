@@ -2174,321 +2174,292 @@ with tab6:
 
 # --- 탭 7: 관리자 ---
 with tab7:
-    st.header("관리자 메뉴")
+    st.header("⚙️ 관리자 페이지")
     admin_auth = st.empty()
 
-    if st.session_state['admin_logged_in']:
-        
-        # [NEW] 접속 통계 대시보드
-        st.subheader("📈 접속 통계 (오늘)")
-        
-        sheet_log = get_sheet_instance(SHEET_LOGS)
-        if sheet_log:
-            try:
-                logs = sheet_log.get_all_records()
-                if logs:
-                    df_log = pd.DataFrame(logs)
-                    
-                    # 오늘 날짜 필터링
-                    today_str = datetime.now().strftime("%Y-%m-%d")
-                    # '일시' 컬럼에서 날짜 부분만 잘라서 비교
-                    df_log['날짜'] = df_log['일시'].apply(lambda x: x.split(" ")[0])
-                    df_today = df_log[df_log['날짜'] == today_str]
-                    
-                    # 통계 계산
-                    visit_count = len(df_today[df_today['유형'] == '메인접속'])
-                    lineup_count = len(df_today[df_today['유형'] == '라인업조회'])
-                    
-                    # 화면 표시
-                    m1, m2 = st.columns(2)
-                    m1.metric("오늘 방문자 수", f"{visit_count}명", delta="누적 접속")
-                    m2.metric("라인업 조회 수", f"{lineup_count}회", delta="관심도")
-                    
-                    with st.expander("📜 오늘 접속 로그 상세 보기"):
-                        st.dataframe(df_today[['일시', '유형', '접속자(추정)']], hide_index=True)
-                        
-            except Exception as e:
-                st.error("로그를 불러오는 중 오류가 발생했습니다.")
-    
+    # [1] 로그인 화면 (비로그인 상태)
     if not st.session_state['admin_logged_in']:
         with admin_auth.form("admin_main_login"):
             pw = st.text_input("비밀번호", type="password")
             if st.form_submit_button("확인"):
                 if pw == ADMIN_PASSWORD:
                     st.session_state['admin_logged_in'] = True
+                    st.toast("관리자 모드 접속", icon="🔓")
                     admin_auth.empty()
-                else: st.error("비밀번호 불일치")
-    
+                    st.rerun()
+                else: 
+                    st.error("비밀번호가 일치하지 않습니다.")
+
+    # [2] 관리자 메인 화면 (로그인 상태)
     if st.session_state['admin_logged_in']:
-        # [NEW] 라인업 공개 스위치 (가장 위에 배치)
+        
+        # =========================================================
+        # 섹션 1: 대시보드 & 기본 설정
+        # =========================================================
+        st.subheader("📊 오늘의 접속 현황")
+        
+        sheet_log = get_sheet_instance(SHEET_LOGS)
+        if sheet_log:
+            try:
+                logs = sheet_log.get_all_records()
+                if not logs:
+                    st.info("데이터 없음")
+                else:
+                    df_log = pd.DataFrame(logs)
+                    
+                    # [수정] 한국 시간(KST) 기준 오늘 날짜 필터링
+                    now_kst = datetime.utcnow() + timedelta(hours=9)
+                    today_str = now_kst.strftime("%Y-%m-%d")
+                    
+                    # 날짜 컬럼 생성 (에러 방지용 문자열 변환)
+                    df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
+                    df_today = df_log[df_log['날짜'] == today_str]
+                    
+                    # 통계 산출
+                    visit_count = len(df_today[df_today['유형'] == '메인접속'])
+                    lineup_count = len(df_today[df_today['유형'] == '라인업조회'])
+                    
+                    m1, m2 = st.columns(2)
+                    m1.metric("오늘 방문자 (중복제거)", f"{visit_count}명", delta="실사용자")
+                    m2.metric("라인업 조회", f"{lineup_count}회", delta="관심도")
+                    
+                    with st.expander("📜 상세 접속 로그 보기"):
+                        st.dataframe(df_today[['일시', '유형', '접속자(추정)', 'IP주소']], hide_index=True)
+            except Exception as e:
+                st.error(f"통계 로딩 실패: {e}")
+
+        st.divider()
+
+        # =========================================================
+        # 섹션 2: 라인업 공개 설정 (가장 자주 쓰는 기능)
+        # =========================================================
         st.subheader("📢 라인업 공개 설정")
+        
         if current_game:
-            # 현재 상태 확인 (O: 공개, X: 비공개)
             is_visible_now = str(current_game.get('공개여부', 'X')).upper().strip() == 'O'
             
-            col_tog, col_stat = st.columns([1, 3])
-            with col_tog:
-                # 토글 스위치
+            c_tog, c_stat = st.columns([1, 3])
+            with c_tog:
                 toggle_val = st.toggle("라인업 공개하기", value=is_visible_now)
             
-            with col_stat:
+            with c_stat:
                 if toggle_val:
-                    st.success("🟢 **현재 상태: 공개 중** (회원들이 볼 수 있습니다)")
+                    st.success("🟢 **공개 중** (회원 열람 가능)")
                 else:
-                    st.error("🔒 **현재 상태: 비공개** (운영진만 확인/수정 가능)")
+                    st.error("🔒 **비공개** (운영진만 확인 가능)")
 
-            # 상태가 변경되었을 때만 업데이트 실행
+            # 상태 변경 감지 및 저장
             if toggle_val != is_visible_now:
                 if toggle_game_visibility(toggle_val):
-                    st.toast("상태가 변경되었습니다!", icon="✅")
+                    st.toast("공개 상태가 변경되었습니다!", icon="✅")
                     time.sleep(0.5)
                     st.rerun()
         else:
             st.warning("진행 중인 게임이 없습니다.")
-        
+
         st.divider()
 
-        # ... (이하 '참가 확인 관리' 코드 등 기존 코드 그대로 유지) ...
-        st.subheader("✅ 참가 확인 및 대기자 관리")
+        # =========================================================
+        # 섹션 3: 참가자 관리 (확정/대기 분류)
+        # =========================================================
+        st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
-        # ... (기존 코드 계속) ...
+        
         if apps:
             df_manage = pd.DataFrame(apps)
+            
+            # 입금 체크박스용 컬럼 생성
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper() == 'O' else False)
             cols_manage = ["이름", "연락처", "입금_bool", "1순위", "비고"]
             
-            # [NEW] 명단 분리 로직 (VEGA 우선)
-            # 조건 1: 인덱스가 20 미만 (선착순)
-            # 조건 2: 이름에 [VEGA] 포함 (프리패스)
-            # 이 두 가지 중 하나라도 만족하면 '확정'
-            
-            # 인덱스 생성
+            # [명단 분리] 확정(선착순 20명 or VEGA) vs 대기
             df_manage = df_manage.reset_index(drop=True)
-            
-            # 확정 조건: (순번이 20등 안쪽) OR (VEGA 회원)
             mask_confirmed = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]", regex=True))
             
             df_confirmed = df_manage[mask_confirmed]
-            df_waiting = df_manage[~mask_confirmed] # 확정 아닌 나머지는 대기
-            
-            # 1. 경기 확정권
-            st.success(f"📌 **경기 확정 명단 ({len(df_confirmed)}명)** - VEGA 포함")
+            df_waiting = df_manage[~mask_confirmed]
+
+            # 1. 확정 명단
+            st.success(f"📌 **경기 확정 ({len(df_confirmed)}명)**")
             edited_confirmed = st.data_editor(
                 df_confirmed[cols_manage], 
-                column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, 
-                hide_index=True,
-                key="editor_confirmed"
+                column_config={"입금_bool": st.column_config.CheckboxColumn("입금 확인")}, 
+                hide_index=True, key="editor_confirmed"
             )
             
-            # 2. 예비 대기자
+            # 2. 대기 명단
             if not df_waiting.empty:
-                st.divider()
-                st.error(f"⏳ **예비 대기자 ({len(df_waiting)}명)** - 픽업 회원")
-                st.caption("앞 번호 픽업 신청자가 취소하면, 예비 1번에게 연락하여 참석 여부를 물어보세요.")
+                st.warning(f"⏳ **예비 대기 ({len(df_waiting)}명)**")
                 edited_waiting = st.data_editor(
                     df_waiting[cols_manage], 
-                    column_config={"입금_bool": st.column_config.CheckboxColumn("참가 확인")}, 
-                    hide_index=True,
-                    key="editor_waiting"
+                    column_config={"입금_bool": st.column_config.CheckboxColumn("입금 확인")}, 
+                    hide_index=True, key="editor_waiting"
                 )
             
-            if st.button("참가 현황 저장"):
-                # 변경된 내용 합쳐서 저장 (순서 유지)
-                # 원본 df_manage에 편집된 내용 반영
-                
-                # 확정 명단 업데이트
+            # [저장 버튼]
+            if st.button("💾 참가 현황 저장하기", type="primary"):
+                # 변경된 체크박스 값 반영
+                # (1) 확정 명단 반영
                 for idx, row in edited_confirmed.iterrows():
-                    # 원래 인덱스를 찾아서 업데이트 (이름/연락처 기준 매칭이 안전하지만 여기선 간편하게)
-                    # data_editor는 인덱스를 보존하므로 loc 사용 가능
-                    org_idx = row.name # 편집 전 인덱스 (df_manage 기준이 아닐 수 있음, 주의)
-                    
-                    # 가장 안전한 방법: 이름/연락처로 매칭
-                    mask = (df_manage['이름'] == row['이름']) & (df_manage['연락처'] == row['연락처'])
-                    if mask.any():
-                        df_manage.loc[mask, '입금_bool'] = row['입금_bool']
-
-                # 대기 명단 업데이트
+                    org_idx = row.name
+                    df_manage.loc[org_idx, '입금_bool'] = row['입금_bool']
+                # (2) 대기 명단 반영
                 if not df_waiting.empty:
                     for idx, row in edited_waiting.iterrows():
-                        mask = (df_manage['이름'] == row['이름']) & (df_manage['연락처'] == row['연락처'])
-                        if mask.any():
-                            df_manage.loc[mask, '입금_bool'] = row['입금_bool']
-
+                        org_idx = row.name
+                        df_manage.loc[org_idx, '입금_bool'] = row['입금_bool']
+                
+                # bool -> 'O'/'X' 변환 후 저장
                 df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
-                update_lineup(df_manage)
+                update_lineup(df_manage) # 저장 함수 호출
+                
                 st.success("저장되었습니다.")
-                time.sleep(1.0)
+                time.sleep(0.5)
                 st.rerun()
-        else: st.info("신청자 없음")
 
-        # ... (이전 코드: 참가 현황 저장 버튼 등) ...
-        
+        else:
+            st.info("아직 신청자가 없습니다.")
+
         st.divider()
-        st.subheader("📨 단체 문자 발송 도우미")
+
+        # =========================================================
+        # 섹션 4: 문자 발송 도우미
+        # =========================================================
+        st.subheader("📨 단체 문자 발송")
         
-        # 명단 분류 (확정 vs 대기)
         if apps:
-            # 데이터 정리
-            p_df = pd.DataFrame(apps)
-            confirmed_list = []
-            waiting_list = []
+            confirmed_phones = []
+            waiting_phones = []
             
-            for idx, row in p_df.iterrows():
-                p_name = row['이름']
+            for idx, row in pd.DataFrame(apps).iterrows():
                 p_phone = str(row.get('연락처', '')).strip()
                 if not p_phone: continue
                 
-                # 확정 조건 (정원 내 or VEGA)
-                is_vega = "[VEGA]" in p_name
+                is_vega = "[VEGA]" in row['이름']
                 if idx < MAX_CAPACITY or is_vega:
-                    confirmed_list.append(p_phone)
+                    confirmed_phones.append(p_phone)
                 else:
-                    waiting_list.append(p_phone)
+                    waiting_phones.append(p_phone)
             
-            # 사이트 주소 (메시지에 넣을 용도)
-            # Streamlit Cloud 배포 주소로 변경해주세요!
-            SITE_URL = "https://volleyball-pickup.streamlit.app" 
+            SITE_URL = "https://volleyball-pickup.streamlit.app"
             
-            c1, c2 = st.columns(2)
-            
-            # 1. 확정 인원 문자
-            with c1:
-                st.info(f"✅ **경기 확정자 ({len(confirmed_list)}명)**")
-                if confirmed_list:
-                    # 연락처 묶음
-                    st.text("수신인 (복사해서 붙여넣기)")
-                    st.code(", ".join(confirmed_list), language="text")
-                    
-                    # 메시지 내용 (단문 최적화)
-                    msg_confirm = f"[여순광배구]\n금일 18:30 운동 예정.\n라인업 확인 바랍니다.\n{SITE_URL}"
-                    st.text("보낼 내용 (단문/LMS)")
-                    st.code(msg_confirm, language="text")
-                else:
-                    st.caption("확정된 인원이 없습니다.")
-
-            # 2. 대기 인원 문자
-            with c2:
-                st.error(f"⏳ **예비 대기자 ({len(waiting_list)}명)**")
-                if waiting_list:
-                    # 연락처 묶음
-                    st.text("수신인 (복사해서 붙여넣기)")
-                    st.code(", ".join(waiting_list), language="text")
-                    
-                    # 메시지 내용
-                    msg_wait = f"[여순광배구]\n금일 정원 초과로 '대기' 등록되었습니다.\n결원 발생 시 순서대로 연락드리겠습니다."
-                    st.text("보낼 내용")
-                    st.code(msg_wait, language="text")
-                else:
-                    st.caption("대기자가 없습니다.")
-                    
-        else:
-            st.info("신청자가 없습니다.")
-
-# --- 탭 7 내부 ---
-        st.divider()
-        st.subheader("🛠️ 새 게임 개설")
-        with st.form("create_game"):
-            reset_chk = st.checkbox("개설 시 기존 명단 초기화 (아카이빙)", value=True)
-            title = st.text_input("게임 제목")
-            dt = st.text_input("일시")
-            loc = st.text_input("장소")
-            gender = st.radio("성별", ["혼성", "남자", "여자"], horizontal=True)
-            col_d, col_t = st.columns(2)
-            with col_d: dead_date = st.date_input("마감 날짜")
-            with col_t: dead_time = st.time_input("마감 시간")
-            fee = st.text_input("참가비")
-            acc = st.text_input("계좌")
-            contact = st.text_input("연락처")
-            desc = st.text_area("공지사항")
-            
-            if st.form_submit_button("개설하기"):
-                # [수정된 순서]
-                # 1. 기존 명단 처리 (아카이빙 및 초기화)를 '먼저' 수행해야 함
-                # 그래야 직전 게임 제목으로 기록이 남습니다.
-                if reset_chk: 
-                    archive_current_game() # 현재 명단을 '현재 제목(CLOSED 등)'으로 저장
-                    clear_applicants()     # 명단 비우기
-
-                # 2. 그 다음에 '새 게임 정보'를 저장
-                deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
-                info = {
-                    "제목": title, "일시": dt, "장소": loc, "성별": gender, 
-                    "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact, 
-                    "마감일시": deadline_str
-                }
-                save_game_info(info)
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.info("✅ 확정자 문자")
+                st.code(", ".join(confirmed_phones), language="text")
+                st.code(f"[여순광배구]\n금일 18:30 운동 예정.\n라인업 확인 바랍니다.\n{SITE_URL}", language="text")
                 
-                st.success("새 게임이 개설되었습니다! (기존 명단 정리 완료)")
-                time.sleep(1.5)
-                st.rerun()
+            with mc2:
+                st.warning("⏳ 대기자 문자")
+                if waiting_phones:
+                    st.code(", ".join(waiting_phones), language="text")
+                    st.code(f"[여순광배구]\n정원 초과로 '대기' 접수되었습니다.\n결원 시 연락드리겠습니다.", language="text")
+                else:
+                    st.caption("(대기 인원 없음)")
         
-        # [게임 종료 기능]
         st.divider()
-        st.subheader("🏁 현재 게임 종료 (수동)")
-        with st.expander("⚠️ 게임 종료 및 모집 마감 (클릭)"):
-            st.warning("""
-            **[주의]** 이 버튼을 누르면:
-            1. 현재 명단을 '경기기록'에 저장합니다.
-            2. 모집 상태를 '종료(CLOSED)'로 변경하여 추가 신청을 막습니다.
-            3. **명단은 삭제하지 않습니다.** (MVP 투표 및 라인업 조회를 위해 유지)
-            """)
-            if st.button("현재 게임 종료하기"):
+
+        # =========================================================
+        # 섹션 5: 게임 생성 및 종료 (Lifecycle)
+        # =========================================================
+        st.subheader("🛠️ 게임 관리 (생성/종료)")
+        
+        tab_create, tab_end = st.tabs(["🆕 새 게임 만들기", "🏁 현재 게임 종료"])
+        
+        # [5-1] 새 게임 만들기
+        with tab_create:
+            with st.form("create_game"):
+                st.caption("새로운 게임을 만들면 기존 명단은 자동으로 '지난 기록'으로 저장됩니다.")
+                reset_chk = st.checkbox("기존 명단 초기화 (필수)", value=True)
+                
+                c_info1, c_info2 = st.columns(2)
+                with c_info1:
+                    title = st.text_input("게임 제목", placeholder="X월 X일 정기모임")
+                    dt = st.text_input("일시", placeholder="YYYY-MM-DD HH:MM")
+                    loc = st.text_input("장소", value="순천조례초 체육관")
+                    gender = st.radio("성별", ["혼성", "남자", "여자"], horizontal=True)
+                with c_info2:
+                    dead_date = st.date_input("마감 날짜")
+                    dead_time = st.time_input("마감 시간")
+                    fee = st.text_input("참가비", value="5,000원")
+                    acc = st.text_input("계좌", placeholder="카카오뱅크 xxx-xxxx")
+                
+                desc = st.text_area("공지사항")
+                contact = st.text_input("문의 연락처")
+
+                if st.form_submit_button("개설하기"):
+                    # 1. 아카이빙 및 초기화
+                    if reset_chk:
+                        archive_current_game()
+                        clear_applicants()
+                    
+                    # 2. 새 정보 저장
+                    deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
+                    info = {
+                        "제목": title, "일시": dt, "장소": loc, "성별": gender,
+                        "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact,
+                        "마감일시": deadline_str
+                    }
+                    save_game_info(info)
+                    st.success("새 게임이 개설되었습니다!")
+                    time.sleep(1.0)
+                    st.rerun()
+
+        # [5-2] 현재 게임 종료
+        with tab_end:
+            st.warning("게임을 종료하면 '모집 마감' 상태가 되며, 명단은 그대로 유지됩니다.")
+            if st.button("현재 게임 종료하기 (CLOSED)"):
                 archive_current_game() # 기록 저장
                 
-                # 명단 유지하면서 상태만 CLOSED로 변경
+                # 명단 유지, 상태만 CLOSED
                 close_info = {
                     "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
                     "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
                 }
                 save_game_info(close_info)
-                
-                st.success("게임이 종료되었습니다! (명단은 유지됩니다)")
-                time.sleep(1.5)
+                st.success("게임이 종료되었습니다.")
+                time.sleep(1.0)
                 st.rerun()
 
         st.divider()
-        st.subheader("🚨 블랙리스트")
-        with st.form("blacklist"):
-            c1, c2, c3 = st.columns(3)
-            with c1: b_name = st.text_input("이름")
-            with c2: b_phone = st.text_input("연락처")
-            with c3: b_reason = st.text_input("사유")
-            if st.form_submit_button("등록"):
-                add_to_blacklist(b_name, b_phone, b_reason); st.success("등록됨")
-        
-        st.divider()
-        st.subheader("🗣️ 건의함")
-        suggestions = load_suggestions()
-        if suggestions: st.dataframe(suggestions, use_container_width=True)
-        else: st.info("건의 없음")
-        
-        st.divider()
-        st.subheader("🎬 유튜브 영상 등록")
-        with st.form("video_upload"):
-            v_title = st.text_input("영상 제목 (예: 1월 15일 3세트 슈퍼플레이)")
-            v_url = st.text_input("유튜브 링크 (URL)")
-            st.caption("유튜브 영상의 '공유' 버튼을 눌러 링크를 복사해 붙여넣으세요.")
-            
-            if st.form_submit_button("영상 게시하기"):
-                if v_title and v_url:
-                    save_video_link(v_url, v_title)
-                    st.success("영상이 '경기 영상' 탭에 게시되었습니다!")
-                    time.sleep(1.0) 
-                    st.rerun()      
-                else:
-                    st.error("제목과 링크를 모두 입력해주세요.")
 
-        st.divider()
-        with st.expander("🛠️ 라인업 비상 수정"):
+        # =========================================================
+        # 섹션 6: 기타 관리 (영상/건의/블랙리스트)
+        # =========================================================
+        
+        with st.expander("🎬 유튜브 영상 등록"):
+            with st.form("video_upload"):
+                v_title = st.text_input("영상 제목")
+                v_url = st.text_input("유튜브 링크")
+                if st.form_submit_button("등록"):
+                    if v_title and v_url:
+                        save_video_link(v_url, v_title)
+                        st.success("영상 등록 완료")
+                    else: st.error("내용을 입력하세요.")
+
+        with st.expander("🗣️ 건의사항 확인"):
+            suggestions = load_suggestions()
+            if suggestions: st.dataframe(suggestions, use_container_width=True)
+            else: st.info("건의 내용이 없습니다.")
+
+        with st.expander("🚨 블랙리스트 관리"):
+            with st.form("blacklist"):
+                b1, b2, b3 = st.columns(3)
+                with b1: b_name = st.text_input("이름")
+                with b2: b_phone = st.text_input("연락처")
+                with b3: b_reason = st.text_input("사유")
+                if st.form_submit_button("블랙리스트 추가"):
+                    add_to_blacklist(b_name, b_phone, b_reason)
+                    st.success("등록되었습니다.")
+
+        with st.expander("🛠️ 데이터 비상 수정 (Raw Editor)"):
             if apps:
-                cols_edit = ["이름", "팀1", "확정1", "팀2", "확정2", "팀3", "확정3", "입금", "비고", "제외"]
                 df_final = pd.DataFrame(apps)
-                for c in cols_edit:
-                    if c not in df_final.columns: df_final[c] = ""
-                edited_final = st.data_editor(df_final[cols_edit], hide_index=True)
+                edited_final = st.data_editor(df_final, hide_index=True)
                 if st.button("비상 저장"):
-                    df_final.update(edited_final); update_lineup(df_final); st.success("완료")
+                    update_lineup(edited_final)
+                    st.success("저장 완료")
 
 # --- 탭 8: 경기 영상 (NEW) ---
 with tab8:
