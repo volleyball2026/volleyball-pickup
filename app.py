@@ -633,16 +633,27 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
-# --- [UI 함수] 신청자 목록 카드 디자인 (모바일 2열 + 포지션 약어 표시) ---
+# --- [UI 함수] 신청자 목록 카드 디자인 (포지션 약어 명확화: 백 포지션 2글자) ---
 def render_applicant_list_html(df):
     if df.empty:
         return "<div style='text-align:center; padding:20px; color:#999;'>아직 신청자가 없습니다.</div>"
     
-    # [NEW] 포지션 줄임말 매핑 (약어 사전)
+    # [수정] 헷갈리는 포지션은 2글자로 명확히 구분
     POS_ABBR = {
-        "레프트": "레", "라이트": "라", "세터": "세", "속공": "속",
-        "앞차": "앞", "백차": "백",
-        "레프트백": "레백", "센터백": "센백", "라이트백": "라백",
+        # 공격/메인 (1글자)
+        "레프트": "레", 
+        "라이트": "라", 
+        "세터": "세", 
+        "속공": "속",
+        "앞차": "앞", 
+        "백차": "백",
+        
+        # 수비/백 포지션 (2글자 - 여기서 구분!)
+        "레프트백": "레백", 
+        "라이트백": "라백", 
+        "센터백": "센백",
+        
+        # 예외 처리
         "선택 안함": "-", "": "-", "nan": "-"
     }
 
@@ -660,14 +671,19 @@ def render_applicant_list_html(df):
         p3 = str(row.get('3순위', '-')).strip()
         
         # [핵심] 포지션 체인 생성 (예: 세-레-센백)
-        # 2순위, 3순위가 없거나 '선택 안함'이면 표시하지 않음
-        abbr1 = POS_ABBR.get(p1, p1[:1])
+        # 1. 1순위 약어 변환
+        abbr1 = POS_ABBR.get(p1, p1[:1]) # 사전에 없으면 앞 1글자만
         chain_str = abbr1
         
-        if p2 and p2 != "선택 안함" and p2 != "-":
-            chain_str += f"-{POS_ABBR.get(p2, p2[:1])}"
-            if p3 and p3 != "선택 안함" and p3 != "-":
-                chain_str += f"-{POS_ABBR.get(p3, p3[:1])}"
+        # 2. 2순위 연결
+        if p2 and p2 not in ["선택 안함", "-", "nan", ""]:
+            abbr2 = POS_ABBR.get(p2, p2[:1])
+            chain_str += f"-{abbr2}"
+            
+            # 3. 3순위 연결 (2순위가 있을 때만 체크)
+            if p3 and p3 not in ["선택 안함", "-", "nan", ""]:
+                abbr3 = POS_ABBR.get(p3, p3[:1])
+                chain_str += f"-{abbr3}"
 
         note = str(row.get('비고', ''))
         status_bool = str(row.get('입금', '')).upper() == 'O'
@@ -704,11 +720,11 @@ def render_applicant_list_html(df):
             # 상태 아이콘
             f"  <div style='position: absolute; top: 8px; right: 8px; font-size: 0.8em;'>{status_icon}</div>"
             
-            # 포지션 아이콘 (1순위 한글자)
+            # 포지션 아이콘 (1순위 약어 크게)
             f"  <div style='display: flex; justify-content: center; margin-bottom: 6px;'>"
             f"    <div style='width: 35px; height: 35px; border-radius: 50%; background-color: #f0f2f6; "
             f"    color: #444; display: flex; align-items: center; justify-content: center; "
-            f"    font-weight: 800; font-size: 1.0em; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
+            f"    font-weight: 800; font-size: { '0.85em' if len(abbr1) > 1 else '1.0em' }; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
             f"      {abbr1}"
             f"    </div>"
             f"  </div>"
@@ -721,7 +737,7 @@ def render_applicant_list_html(df):
             f"    {display_name}"
             f"  </div>"
             
-            # [수정됨] 레벨 · 포지션 체인 (세-레-센백)
+            # [결과] 레벨 · 포지션 체인 (예: 초급 · 세-레-센백)
             f"  <div style='font-size: 0.75em; color: #666; letter-spacing: -0.5px; font-weight: 600;'>"
             f"    {level} · <span style='color:#1565C0;'>{chain_str}</span>"
             f"  </div>"
@@ -732,10 +748,7 @@ def render_applicant_list_html(df):
         
     html_code += "</div>"
     return html_code
-# --- [UI 함수] 작전판(Court View) HTML 생성 ---
-# --- [UI 함수] 작전판(Court View) HTML 생성 (들여쓰기 오류 수정본) ---
-# --- [UI 함수] 작전판(Court View) HTML 생성 (점수 상세 색상 복구 + 들여쓰기 방지) ---
-# --- [UI 함수] 작전판(Court View) HTML 생성 (모바일 최적화: 뱃지 적용 & 줄바꿈 허용) ---
+    
 # --- [UI 함수] 작전판(Court View) HTML 생성 (순위 뱃지 복구 + 모바일 최적화) ---
 def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
     # 팀 색상 설정
