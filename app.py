@@ -1113,6 +1113,7 @@ user_guess = st.session_state.get('my_name', '익명')
 log_visit("메인접속", user_guess)
 
 # [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조)
+# [수정] 모바일 최적화 CSS (가로 스크롤 탭 + 알약 버튼 + 신청버튼 강조)
 st.markdown("""
     <style>
         /* 1. 상단 헤더 숨기기 & 여백 조정 */
@@ -1183,7 +1184,6 @@ st.markdown("""
         button[data-baseweb="tab"] p { margin: 0; }
 
         /* [핵심] 8. 신청하기 버튼 (폼 제출 버튼) 강조 */
-        /* '신청하기' 버튼이 포함된 폼 내부의 버튼을 타겟팅 */
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"] {
             background-color: #1565C0 !important; /* 진한 파랑 */
             color: white !important;
@@ -1198,6 +1198,23 @@ st.markdown("""
         }
         div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:active {
             transform: scale(0.98); /* 눌렀을 때 살짝 들어가는 효과 */
+        }
+
+        /* [NEW] 9. 중첩된 탭(세트 탭 등)의 2번째 버튼 스타일 초기화 */
+        /* 메인 탭 내용물(stTabContent) 안에 있는 탭 버튼은 주황색 효과를 뺍니다 */
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2) {
+            background-color: #f7f7f7 !important; /* 원래 회색 */
+            color: #666 !important;               /* 원래 글씨색 */
+            border: 1px solid #eee !important;    /* 원래 테두리 */
+            font-weight: normal !important;       /* 굵기 해제 */
+        }
+
+        /* 중첩된 탭의 2번째 버튼이 선택되었을 때 (파란색으로 통일) */
+        div[data-testid="stTabContent"] button[data-baseweb="tab"]:nth-of-type(2)[aria-selected="true"] {
+            background-color: #E3F2FD !important; /* 연한 파랑 배경 */
+            color: #1565C0 !important;            /* 진한 파랑 글씨 */
+            border-color: #1565C0 !important;     /* 파랑 테두리 */
+            font-weight: bold !important;
         }
 
     </style>
