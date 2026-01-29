@@ -1430,8 +1430,49 @@ with tab1:
             
             st.markdown("---")
             st.write("**⏱️ 참가 가능 시간(세트) 선택**")
-            set_options = ["1·2세트 (19:20 ~ 20:00)", "3·4세트 (20:00 ~ 20:40)", "5·6세트 (20:40 ~ 21:20)"]
-            selected_sets = st.multiselect("참가할 세트를 모두 선택해주세요", options=set_options, default=set_options)
+            # --- [기존 코드 교체 시작] ---
+            st.markdown("---")
+            st.write("**⏱️ 참가 가능 시간(세트) 선택**")
+            
+            # 1. 세트 데이터 정의 (필요하면 7·8세트도 여기에 추가하면 됩니다)
+            # 형식: (세트명, 시간)
+            set_options_data = [
+                ("1·2세트", "(19:20 ~ 20:00)"),
+                ("3·4세트", "(20:00 ~ 20:40)"),
+                ("5·6세트", "(20:40 ~ 21:20)"),
+                ("7·8세트", "1~6세트가 일찍 끝난경우") # 필요시 주석 해제
+            ]
+            
+            selected_sets = [] # 선택된 세트들을 담을 리스트
+            
+            # 2. O/X 선택 UI 생성 (깔끔한 박스 안에 배치)
+            with st.container(border=True):
+                for idx, (s_name, s_time) in enumerate(set_options_data):
+                    # 전체 텍스트 (기존 로직 호환용)
+                    full_text = f"{s_name} {s_time}"
+                    
+                    c_label, c_radio = st.columns([1.5, 1])
+                    
+                    with c_label:
+                        # 세트 이름과 시간을 보기 좋게 표시 (수직 정렬 보정)
+                        st.markdown(f"<div style='padding-top: 10px; font-weight:bold;'>{s_name} <span style='font-size:0.8em; color:#666; font-weight:normal;'>{s_time}</span></div>", unsafe_allow_html=True)
+                    
+                    with c_radio:
+                        # O / X 라디오 버튼 (가로 배치)
+                        # key를 유니크하게 주어 충돌 방지
+                        choice = st.radio(
+                            f"sel_{idx}", 
+                            ["참가(O)", "불참(X)"], 
+                            horizontal=True, 
+                            index=0, # 기본값: 참가(O)
+                            label_visibility="collapsed",
+                            key=f"set_radio_{idx}"
+                        )
+                        
+                        # '참가'를 선택했을 때만 리스트에 추가
+                        if "참가" in choice:
+                            selected_sets.append(full_text)
+            # --- [교체 끝] ---
             
             lc1, lc2 = st.columns(2)
             with lc1: level = st.selectbox("참가자 레벨", LEVELS)
