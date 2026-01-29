@@ -188,54 +188,42 @@ def get_sheet_instance(sheet_name):
 
 # --- [유틸리티] ---
 
-# [기능 함수] 접속 로그 저장 함수 (1일 1회 IP 중복 방지 적용)
+# [기능 함수] 접속 로그 저장 함수 (새로고침 F5 남발 방지: URL 꼬리표 방식)
 def log_visit(action_type, user_info="익명"):
-    # 1. 내 IP 가져오기
+    # 1. 이미 방문 꼬리표(visited=true)가 있는지 확인
+    # (새로고침을 해도 이 꼬리표는 URL에 남아있음 -> 중복 카운트 방지)
+    query_params = st.query_params
+    if "visited" in query_params and query_params["visited"] == "true":
+        return # 이미 기록된 방문자이므로 저장 안 함
+
+    # 2. 세션 상태 확인 (중복 방지 2차)
+    session_key = f"log_{action_type}"
+    if session_key in st.session_state:
+        return
+
+    # 3. 로그 저장 시작
     client_ip = get_client_ip()
-    
-    # 2. 오늘 날짜 (한국 시간)
     now_kst = datetime.utcnow() + timedelta(hours=9)
-    today_str = now_kst.strftime("%Y-%m-%d") # YYYY-MM-DD
-    now_full_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
+    now_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
 
     sheet = get_sheet_instance(SHEET_LOGS)
     if sheet:
         try:
-            # 3. 기존 로그 가져오기 (중복 체크용)
-            rows = sheet.get_all_values()
-            
-            # 헤더가 없으면 새로 만듦 (IP 컬럼 추가)
-            if not rows:
+            # 헤더 없으면 생성
+            if not sheet.get_all_values():
                 sheet.append_row(["일시", "유형", "접속자(추정)", "IP주소"])
-                rows = []
             
-            # 4. 중복 체크 로직
-            # "오늘 날짜" + "내 IP" + "같은 행동(메인접속 등)"이 이미 있는지 확인
-            is_duplicate = False
+            # 로그 저장
+            sheet.append_row([now_str, action_type, user_info, client_ip])
             
-            # 데이터가 많아지면 느려질 수 있으므로, 최근 100개만 검사하거나 전체 검사
-            # 여기서는 전체 검사 (데이터가 적으므로)
-            for row in rows[1:]: # 헤더 제외
-                # row[0]은 '2026-01-29 10:00:00' 형식이므로 날짜만 자름
-                if len(row) >= 4:
-                    log_date = row[0].split(" ")[0] # 날짜 부분
-                    log_type = row[1]
-                    log_ip = row[3]
-                    
-                    if log_date == today_str and log_ip == client_ip and log_type == action_type:
-                        is_duplicate = True
-                        break
+            # 4. [핵심] 방문 도장 찍기
+            # (1) 세션에 기록
+            st.session_state[session_key] = True
+            # (2) 브라우저 URL에 '?visited=true' 꼬리표 붙이기 (F5 눌러도 유지됨)
+            st.query_params["visited"] = "true"
             
-            # 5. 중복이 아닐 때만 저장
-            if not is_duplicate:
-                sheet.append_row([now_full_str, action_type, user_info, client_ip])
-                # 세션에도 기록 (불필요한 시트 조회 방지)
-                st.session_state[f"log_{action_type}"] = True
-                
         except Exception as e:
-            # 에러 나도 앱이 멈추면 안 됨 (print로 확인만)
             print(f"로그 저장 실패: {e}")
-
 def normalize_phone(phone):
     if not phone: return ""
     phone = re.sub(r'\D', '', str(phone))
