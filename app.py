@@ -917,6 +917,7 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정 Ver 3.9.5] 1~3순위 빈자리 매칭 + 에이스 보호 ---
 # --- [알고리즘 수정 Ver 3.9.6] 희귀 포지션(속공/세터 등) 절대 사수 로직 ---
 # --- [알고리즘 수정] 예비 인원 제외 필터링 적용 ---
+# --- [알고리즘 수정] 전체 수정 코드 (B팀 희소 포지션 보호 + 잉여 자원 차출) ---
 def generate_vega_priority_schedule(df):
     # 1. 전체 명단을 가져오되, '확정 인원'만 추려냅니다.
     raw_data = df.to_dict('records')
@@ -933,7 +934,7 @@ def generate_vega_priority_schedule(df):
             # 예비 인원은 라인업 생성에서 제외
             continue
             
-    # 제외 포지션 파싱 (기존 로직 계속)
+    # 제외 포지션 파싱
     for p in base_players:
         ex_str = str(p.get('제외', ''))
         p['excluded'] = [x.strip() for x in ex_str.split(',') if x.strip()] if ex_str else []
@@ -942,11 +943,12 @@ def generate_vega_priority_schedule(df):
     global_hardship = {p['이름']: 0 for p in base_players}
     final_rounds = {}
 
-    # 1~4라운드
+    # 1~4라운드 루프
     for round_num in range(1, 5):
         target_set = f"{round_num*2-1}·{round_num*2}"
         valid_markers = ["1·2", "3·4", "5·6"]
         
+        # 해당 라운드 참가자 풀 구성
         current_pool = []
         for p in base_players:
             note = str(p.get('비고', ''))
@@ -964,6 +966,7 @@ def generate_vega_priority_schedule(df):
             sc, re = get_priority_score(p, global_history, global_hardship)
             p['priority_score'] = sc; p['score_reason'] = re
             
+        # 점수 높은 순 정렬 (기본)
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
         # VEGA vs 픽업 분리
@@ -972,79 +975,85 @@ def generate_vega_priority_schedule(df):
         
         target_size = (len(current_pool) + 1) // 2
         
-        # [핵심 로직 수정] B -> A 이동 (희소성 고려)
+        # -------------------------------------------------------------
+        # [핵심 로직 수정] A팀 인원 부족 시: B -> A 이동 (지능형 밸런싱)
+        # 조건: "B팀에서 필요 없는(잉여) 자원부터 A팀으로 보낸다."
+        # -------------------------------------------------------------
         while len(team_a) < target_size and len(team_b) > 0:
+            # 1. A팀의 현재 포지션 현황 (점유된 포지션)
             occupied_roles_a = set(str(p.get('1순위')).strip() for p in team_a)
             
-            # 1. B팀의 포지션 현황 파악 (누가 희귀 자원인가?)
+            # 2. B팀의 포지션별 인원 카운트 (누가 희귀한가?)
             team_b_counts = {}
             for p in team_b:
                 role = str(p.get('1순위', '')).strip()
-                if role: team_b_counts[role] = team_b_counts.get(role, 0) + 1
+                if role and role != "선택 안함":
+                    team_b_counts[role] = team_b_counts.get(role, 0) + 1
             
-            # 후보군 분류 (튜플: (index, sort_key))
-            # sort_key: (희소성 점수, 점수)
-            # 희소성 점수: 0=잉여(보내도 됨), 1=보통, 2=희귀(절대 안보냄)
-            
+            # 3. 방출 후보군 점수 매기기 (Release Score)
             candidates = []
             
             for i, p in enumerate(team_b):
-                # 1) Fit 여부 확인 (A팀 빈자리 채울 수 있나?)
-                is_fit = False
-                for rank in ['1순위', '2순위', '3순위']:
-                    r_val = str(p.get(rank, '')).strip()
-                    if r_val and r_val != '선택 안함' and r_val not in occupied_roles_a:
-                        is_fit = True; break
-                
-                # 2) 희소성 확인 (B팀에서 내가 유일한가?)
-                my_role = str(p.get('1순위', '')).strip()
-                count_in_b = team_b_counts.get(my_role, 0)
-                
-                # 보호 레벨 설정
-                # 레벨 0: B팀에 내 포지션 2명 이상 있음 (잉여 자원 -> 우선 방출 대상)
-                # 레벨 1: B팀에 나 혼자임 (희귀 자원 -> 보호 대상)
-                protection_level = 1 if count_in_b == 1 else 0
-                
-                # Fit 보너스: A팀에 딱 맞는 사람은 우선순위 높임 (보내는 게 이득)
-                # 하지만 희귀 자원 보호가 더 강력해야 함.
-                
-                # 정렬 키 설계: (보호레벨 오름차순, Fit 여부 내림차순, 점수 오름차순)
-                # 1. 보호레벨 낮을수록(0) 먼저 선택됨
-                # 2. Fit 할수록(True) 먼저 선택됨 (같은 잉여 자원이면 쓸모있는 사람 보냄)
-                # 3. 점수 낮을수록 먼저 선택됨 (에이스 보호)
-                
-                # Python sort는 오름차순이 기본. 
-                # 우리는 "선택될 사람"을 리스트의 맨 뒤(pop)로 보내거나, min/max를 잘 써야 함.
-                # 편의상 리스트에 넣고 "가장 적합한 방출 대상"을 찾자.
-                
-                # 점수: 작을수록 방출 유력
+                role = str(p.get('1순위', '')).strip()
                 score_val = p['priority_score']
                 
-                # 종합 방출 점수 (높을수록 방출)
-                # 1. 희귀하면 감점 (-1000)
-                # 2. Fit하면 가산점 (+500)
-                # 3. 점수가 낮으면 가산점 (+ (1000 - score))
+                # [판단 기준]
+                # (1) 희소성: B팀 내 같은 포지션 경쟁자가 몇 명인가?
+                #     1명(나 혼자) -> 희귀 자원 -> 절대 보호 (Protection)
+                #     2명 이상 -> 잉여 자원 -> 방출 대상
+                count_in_b = team_b_counts.get(role, 0)
+                is_unique = (count_in_b == 1)
                 
+                # (2) 적합성: A팀에 내 자리가 비어있는가?
+                #     비어있음 -> 가면 주전 -> 방출 권장
+                #     꽉참 -> 가면 벤치/비선호 -> 보호
+                is_fit = (role not in occupied_roles_a)
+                
+                # [방출 점수 계산] (높을수록 A팀으로 쫓겨남)
                 release_score = 0
-                if protection_level == 1: release_score -= 10000 # 절대 지켜
-                if is_fit: release_score += 500 # 가서 잘하면 보내
-                release_score += (1000 - score_val) # 점수 낮으면 보내
+                
+                if is_unique:
+                    release_score -= 10000  # 희귀 자원은 절대 보호 (점수 대폭 깎음)
+                else:
+                    release_score += 500    # 잉여 자원은 방출 우선
+                    
+                if is_fit:
+                    release_score += 300    # A팀에 자리가 있으면 보내는 게 좋음
+                
+                # 기본적으로 점수가 낮은 사람이 먼저 가야 함 (1000 - 점수)
+                # 점수가 30점이면 +970점, 점수가 90점이면 +910점 -> 낮은 사람이 더 높은 방출점수
+                release_score += (1000 - score_val)
                 
                 candidates.append((i, release_score))
             
-            # 방출 점수가 가장 높은 사람 선택
+            # 4. 방출 점수가 가장 높은(가장 불필요한) 사람 선택
             candidates.sort(key=lambda x: x[1], reverse=True)
-            target_idx = candidates[0][0]
+            idx_to_move = candidates[0][0]
             
             # 이동 실행
-            p_move = team_b.pop(target_idx)
+            p_move = team_b.pop(idx_to_move)
             team_a.append(p_move)
 
-        # 포지션 배정
+        # -------------------------------------------------------------
+        # [Case 2] A팀 인원 과잉 시: A -> B 이동
+        # 조건: A팀은 점수 낮은 사람을 B팀으로 보내서 기회를 줌
+        # -------------------------------------------------------------
+        while len(team_a) > target_size:
+            # 점수 오름차순 정렬 (낮은 사람이 0번)
+            team_a.sort(key=lambda x: x['priority_score'], reverse=False)
+            team_b.append(team_a.pop(0))
+
+        # -------------------------------------------------------------
+        # [최종 정렬] 포지션 배정 함수는 '높은 점수'부터 처리하므로 내림차순 정렬
+        # -------------------------------------------------------------
+        team_a.sort(key=lambda x: x['priority_score'], reverse=True)
+        team_b.sort(key=lambda x: x['priority_score'], reverse=True)
+
+        # 포지션 배정 (이미 수정하신 assign_positions_in_team 사용)
         final_a = assign_positions_in_team(team_a)
         final_b = assign_positions_in_team(team_b)
         
-        # 결과 기록
+        # 결과 기록 (히스토리 누적)
         for p in final_a + final_b:
             nm = p['이름']; mt = p.get('match_type')
             
