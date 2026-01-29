@@ -2469,12 +2469,21 @@ with tab7:
                 reset = st.checkbox("명단 초기화", value=True)
                 if st.form_submit_button("개설"):
                     if reset: archive_current_game(); clear_applicants()
-                    save_game_info({"제목":title, "일시":dt, "마감일시":"2099-12-31", "성별":"혼성", "장소":"체육관", "참가비":"-", "계좌":"-", "설명":"-", "연락처":"-"})
+                    save_game_info({
+                        "제목":title, "일시":dt, "마감일시":"2099-12-31", 
+                        "성별":"혼성", "장소":"체육관", "참가비":"-", 
+                        "계좌":"-", "설명":"-", "연락처":"-"
+                    })
                     st.success("개설 완료"); st.rerun()
         with tab_close:
             if st.button("게임 종료 (CLOSED)"):
                 archive_current_game()
-                save_game_info({"제목":"CLOSED", "일시":"-", "마감일시":"-"})
+                # [수정] 모든 필수 키를 포함한 딕셔너리로 수정! (KeyError 해결)
+                close_info = {
+                    "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
+                    "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
+                }
+                save_game_info(close_info)
                 st.success("종료 완료"); st.rerun()
 
         # 기타 관리
