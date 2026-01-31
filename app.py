@@ -2360,7 +2360,7 @@ with tab7:
 
     # [1] 로그인 화면
     if not st.session_state['admin_logged_in']:
-        with admin_auth.form("admin_main_login_unique"): # key 변경으로 충돌 방지
+        with admin_auth.form("admin_main_login_unique"):
             pw = st.text_input("비밀번호", type="password")
             keep_login = st.checkbox("로그인 상태 유지하기 (체크 필수)", value=True)
             
@@ -2382,16 +2382,30 @@ with tab7:
             st.query_params.clear()
             st.rerun()
 
-        # 대시보드
+        # =========================================================
+        # 섹션 1: 대시보드 & 기본 설정 (로직 개선됨)
+        # =========================================================
         st.subheader("📊 오늘의 접속 현황")
+        
         sheet_log = get_sheet_instance(SHEET_LOGS)
         if sheet_log:
             try:
-                logs = sheet_log.get_all_records()
-                if logs:
-                    df_log = pd.DataFrame(logs)
+                # [수정] get_all_records 대신 get_all_values 사용 (더 안정적)
+                rows = sheet_log.get_all_values()
+                
+                if len(rows) <= 1: # 헤더만 있거나 비어있는 경우
+                    st.info("오늘 방문자가 아직 없습니다.")
+                else:
+                    # 첫 줄을 헤더로, 나머지를 데이터로 변환
+                    headers = rows[0]
+                    data = rows[1:]
+                    df_log = pd.DataFrame(data, columns=headers)
+                    
+                    # 날짜 필터링
                     now_kst = datetime.utcnow() + timedelta(hours=9)
                     today_str = now_kst.strftime("%Y-%m-%d")
+                    
+                    # '일시' 컬럼에서 날짜만 추출
                     df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
                     df_today = df_log[df_log['날짜'] == today_str]
                     
@@ -2402,13 +2416,16 @@ with tab7:
                     m1.metric("오늘 방문자", f"{visit_count}명")
                     m2.metric("라인업 조회", f"{lineup_count}회")
                     
-                    with st.expander("📜 상세 로그"):
+                    with st.expander("📜 상세 로그 보기"):
                         st.dataframe(df_today[['일시', '유형', '접속자(추정)', 'IP주소']], hide_index=True)
-            except: st.error("로그 로딩 실패")
+            except Exception as e:
+                st.error(f"통계 로딩 실패: {e}")
 
         st.divider()
 
-        # 라인업 공개 설정
+        # =========================================================
+        # 섹션 2: 라인업 공개 설정
+        # =========================================================
         st.subheader("📢 라인업 공개 설정")
         if current_game:
             is_visible_now = str(current_game.get('공개여부', 'X')).upper().strip() == 'O'
@@ -2426,7 +2443,9 @@ with tab7:
 
         st.divider()
 
-        # 참가자 관리
+        # =========================================================
+        # 섹션 3: 참가자 관리
+        # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
         if apps:
@@ -2460,7 +2479,9 @@ with tab7:
 
         st.divider()
         
-        # 게임 관리
+        # =========================================================
+        # 섹션 4: 게임 관리
+        # =========================================================
         st.subheader("🛠️ 게임 관리")
         tab_new, tab_close = st.tabs(["🆕 새 게임", "🏁 종료"])
         with tab_new:
@@ -2478,7 +2499,7 @@ with tab7:
         with tab_close:
             if st.button("게임 종료 (CLOSED)"):
                 archive_current_game()
-                # [수정] 모든 필수 키를 포함한 딕셔너리로 수정! (KeyError 해결)
+                # [수정] 모든 필수 키 포함
                 close_info = {
                     "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
                     "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
@@ -2486,14 +2507,50 @@ with tab7:
                 save_game_info(close_info)
                 st.success("종료 완료"); st.rerun()
 
-        # 기타 관리
+        # =========================================================
+        # 섹션 5: 기타 관리 (복구됨!)
+        # =========================================================
         with st.expander("기타 설정 (영상/건의/블랙리스트/비상수정)"):
-            st.write("영상 등록, 건의함 확인 등은 아래 기능을 이용하세요.")
-            # (공간 절약을 위해 세부 기능은 생략했습니다. 필요시 이전 코드 붙여넣으셔도 됩니다.)
-            # 만약 비상 수정 기능이 꼭 필요하시면 여기에 추가해주세요.
+            
+            # 1. 영상 등록 기능 복구
+            st.markdown("### 🎬 유튜브 영상 등록")
+            with st.form("video_upload_admin"):
+                v_title = st.text_input("영상 제목")
+                v_url = st.text_input("유튜브 링크")
+                if st.form_submit_button("영상 등록"):
+                    if v_title and v_url:
+                        save_video_link(v_url, v_title)
+                        st.success("영상이 등록되었습니다.")
+                    else: st.error("제목과 링크를 모두 입력하세요.")
+            
+            st.divider()
+
+            # 2. 건의사항 확인 복구
+            st.markdown("### 🗣️ 건의사항 확인")
+            suggestions = load_suggestions()
+            if suggestions: 
+                st.dataframe(suggestions, use_container_width=True)
+            else: 
+                st.info("접수된 건의사항이 없습니다.")
+
+            st.divider()
+
+            # 3. 블랙리스트 관리 복구
+            st.markdown("### 🚨 블랙리스트 관리")
+            with st.form("blacklist_admin"):
+                b1, b2, b3 = st.columns(3)
+                with b1: b_name = st.text_input("이름")
+                with b2: b_phone = st.text_input("연락처")
+                with b3: b_reason = st.text_input("사유")
+                if st.form_submit_button("블랙리스트 추가"):
+                    add_to_blacklist(b_name, b_phone, b_reason)
+                    st.success("등록되었습니다.")
+
+            st.divider()
+
+            # 4. 데이터 비상 수정 (기존 유지)
+            st.markdown("### 🛠️ 데이터 비상 수정 (Raw Editor)")
             if apps:
-                st.divider()
-                st.write("**데이터 비상 수정**")
                 edited_raw = st.data_editor(pd.DataFrame(apps), key="raw_edit")
                 if st.button("비상 저장"):
                     update_lineup(edited_raw); st.success("저장됨")
