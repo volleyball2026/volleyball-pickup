@@ -2428,8 +2428,8 @@ with tab7:
     admin_auth = st.empty()
 
     # [1] 로그인 화면
-    if not st.session_state['admin_logged_in']:
-        with admin_auth.form("admin_main_login_unique"):
+    if not st.session_state.get('admin_logged_in', False):
+        with admin_auth.form("admin_main_login_unique"): # key 변경으로 충돌 방지
             pw = st.text_input("비밀번호", type="password")
             keep_login = st.checkbox("로그인 상태 유지하기 (체크 필수)", value=True)
             
@@ -2445,14 +2445,14 @@ with tab7:
                     st.error("비밀번호가 일치하지 않습니다.")
     
     # [2] 로그인 성공 화면
-    if st.session_state['admin_logged_in']:
+    if st.session_state.get('admin_logged_in', False):
         if st.button("로그아웃 (도장 지우기)", key="logout_tab7"):
             st.session_state['admin_logged_in'] = False
             st.query_params.clear()
             st.rerun()
 
         # =========================================================
-        # 섹션 1: 대시보드 & 기본 설정 (로직 개선됨)
+        # 섹션 1: 대시보드 & 기본 설정 (오류 수정됨 ✨)
         # =========================================================
         st.subheader("📊 오늘의 접속 현황")
         
@@ -2470,23 +2470,32 @@ with tab7:
                     data = rows[1:]
                     df_log = pd.DataFrame(data, columns=headers)
                     
-                    # 날짜 필터링
-                    now_kst = datetime.utcnow() + timedelta(hours=9)
-                    today_str = now_kst.strftime("%Y-%m-%d")
-                    
-                    # '일시' 컬럼에서 날짜만 추출
-                    df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
-                    df_today = df_log[df_log['날짜'] == today_str]
-                    
-                    visit_count = len(df_today[df_today['유형'] == '메인접속'])
-                    lineup_count = len(df_today[df_today['유형'] == '라인업조회'])
-                    
-                    m1, m2 = st.columns(2)
-                    m1.metric("오늘 방문자", f"{visit_count}명")
-                    m2.metric("라인업 조회", f"{lineup_count}회")
-                    
-                    with st.expander("📜 상세 로그 보기"):
-                        st.dataframe(df_today[['일시', '유형', '접속자(추정)', 'IP주소']], hide_index=True)
+                    # [핵심 수정] '일시' 컬럼이 있는지 확인하는 안전장치 추가
+                    if '일시' in df_log.columns:
+                        # 한국 시간(KST) 기준 오늘 날짜 필터링
+                        now_kst = datetime.utcnow() + timedelta(hours=9)
+                        today_str = now_kst.strftime("%Y-%m-%d")
+                        
+                        # 날짜 컬럼 생성 (에러 방지용 문자열 변환)
+                        df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
+                        df_today = df_log[df_log['날짜'] == today_str]
+                        
+                        # 통계 산출
+                        visit_count = len(df_today[df_today['유형'] == '메인접속'])
+                        lineup_count = len(df_today[df_today['유형'] == '라인업조회'])
+                        
+                        m1, m2 = st.columns(2)
+                        m1.metric("오늘 방문자", f"{visit_count}명")
+                        m2.metric("라인업 조회", f"{lineup_count}회")
+                        
+                        with st.expander("📜 상세 접속 로그 보기"):
+                            # 필요한 컬럼만 안전하게 표시
+                            cols_to_show = [c for c in ['일시', '유형', '접속자(추정)', 'IP주소'] if c in df_log.columns]
+                            st.dataframe(df_today[cols_to_show], hide_index=True)
+                    else:
+                        st.warning("⚠️ 로그 시트 형식이 올바르지 않습니다. (헤더 '일시' 누락)")
+                        st.write("현재 데이터:", df_log.head())
+
             except Exception as e:
                 st.error(f"통계 로딩 실패: {e}")
 
@@ -2559,11 +2568,7 @@ with tab7:
                 reset = st.checkbox("명단 초기화", value=True)
                 if st.form_submit_button("개설"):
                     if reset: archive_current_game(); clear_applicants()
-                    save_game_info({
-                        "제목":title, "일시":dt, "마감일시":"2099-12-31", 
-                        "성별":"혼성", "장소":"체육관", "참가비":"-", 
-                        "계좌":"-", "설명":"-", "연락처":"-"
-                    })
+                    save_game_info({"제목":title, "일시":dt, "마감일시":"2099-12-31", "성별":"혼성", "장소":"체육관", "참가비":"-", "계좌":"-", "설명":"-", "연락처":"-"})
                     st.success("개설 완료"); st.rerun()
         with tab_close:
             if st.button("게임 종료 (CLOSED)"):
@@ -2577,11 +2582,11 @@ with tab7:
                 st.success("종료 완료"); st.rerun()
 
         # =========================================================
-        # 섹션 5: 기타 관리 (복구됨!)
+        # 섹션 5: 기타 관리 (유지됨)
         # =========================================================
         with st.expander("기타 설정 (영상/건의/블랙리스트/비상수정)"):
             
-            # 1. 영상 등록 기능 복구
+            # 1. 영상 등록
             st.markdown("### 🎬 유튜브 영상 등록")
             with st.form("video_upload_admin"):
                 v_title = st.text_input("영상 제목")
@@ -2594,24 +2599,22 @@ with tab7:
             
             st.divider()
 
-            # 2. 건의사항 답변 관리 (기능 업그레이드)
+            # 2. 건의사항 답변 관리
             st.markdown("### 🗣️ 건의사항 답변 관리")
             suggestions_data = load_suggestions()
             
             if suggestions_data: 
                 df_sug = pd.DataFrame(suggestions_data)
                 
-                # 컬럼 보정 (옛날 데이터 호환성)
                 if '상태' not in df_sug.columns: df_sug['상태'] = '대기중'
                 if '답변' not in df_sug.columns: df_sug['답변'] = ''
 
-                # 관리자용 에디터 설정
                 edited_sug = st.data_editor(
                     df_sug,
                     use_container_width=True,
                     column_config={
-                        "일시": st.column_config.TextColumn(disabled=True), # 일시는 수정 불가
-                        "내용": st.column_config.TextColumn(disabled=True), # 내용도 수정 불가
+                        "일시": st.column_config.TextColumn(disabled=True),
+                        "내용": st.column_config.TextColumn(disabled=True),
                         "상태": st.column_config.SelectboxColumn(
                             "처리상태", options=["대기중", "완료", "보류"], required=True
                         ),
@@ -2620,12 +2623,12 @@ with tab7:
                         )
                     },
                     hide_index=True,
-                    num_rows="dynamic" # 행 추가/삭제 가능 (필요없는 글 삭제용)
+                    num_rows="dynamic"
                 )
 
                 if st.button("💾 답변 저장하기", type="primary", key="save_sug_btn"):
                     update_suggestions(edited_sug)
-                    st.success("답변이 저장되었습니다! (소리함 탭에 즉시 반영됨)")
+                    st.success("답변이 저장되었습니다!")
                     time.sleep(1)
                     st.rerun()
             else: 
@@ -2633,7 +2636,7 @@ with tab7:
 
             st.divider()
 
-            # 3. 블랙리스트 관리 복구
+            # 3. 블랙리스트 관리
             st.markdown("### 🚨 블랙리스트 관리")
             with st.form("blacklist_admin"):
                 b1, b2, b3 = st.columns(3)
@@ -2646,7 +2649,7 @@ with tab7:
 
             st.divider()
 
-            # 4. 데이터 비상 수정 (기존 유지)
+            # 4. 데이터 비상 수정
             st.markdown("### 🛠️ 데이터 비상 수정 (Raw Editor)")
             if apps:
                 edited_raw = st.data_editor(pd.DataFrame(apps), key="raw_edit")
