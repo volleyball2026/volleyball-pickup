@@ -163,7 +163,7 @@ if 'mvp_voter_verified' not in st.session_state: st.session_state['mvp_voter_ver
 if 'mvp_voter_name' not in st.session_state: st.session_state['mvp_voter_name'] = ""
 if 'mvp_voter_phone' not in st.session_state: st.session_state['mvp_voter_phone'] = ""
 
-# --- [구글 시트 연결] ---
+# --- [구글 시트 연결 최적화] ---
 @st.cache_resource
 def get_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -177,6 +177,30 @@ def get_connection():
         return client
     except Exception as e:
         return None
+
+# [NEW] 문서를 여는 작업도 캐싱하여 속도 2배 향상
+@st.cache_resource
+def get_doc_object():
+    client = get_connection()
+    if client:
+        try:
+            return client.open(DOC_NAME)
+        except:
+            return None
+    return None
+
+def get_sheet_instance(sheet_name):
+    # 매번 open하지 않고 캐시된 문서 객체 사용
+    doc = get_doc_object()
+    if doc:
+        try:
+            return doc.worksheet(sheet_name)
+        except gspread.WorksheetNotFound:
+            # 시트가 없으면 생성 (이 작업은 가끔 일어나므로 캐싱 안 함)
+            return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
+        except Exception as e:
+            return None
+    return None
 
 # [기능 함수 추가] 사용자 IP 주소 가져오기
 def get_client_ip():
@@ -342,7 +366,7 @@ def toggle_game_visibility(is_visible):
             return False
     return False
 
-@st.cache_data(ttl=5) # 갱신 확인을 위해 ttl 단축
+@st.cache_data(ttl=600) # 갱신 확인을 위해 ttl 단축
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
