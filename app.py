@@ -562,12 +562,32 @@ def get_mvp_hall_of_fame():
         return daily_counts[idx].sort_values('일시', ascending=False)
     return []
 
+# --- [기존 함수 수정] 건의사항 저장 (답변 칸 추가) ---
 def save_suggestion(message):
     sheet = get_sheet_instance(SHEET_SUGGESTION)
     if sheet:
-        sheet.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message])
+        # [일시, 내용, 상태, 답변] 순서로 저장
+        # 상태 기본값: '대기중', 답변 기본값: '' (빈칸)
+        sheet.append_row([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+            message, 
+            "대기중", 
+            ""
+        ])
+        st.cache_data.clear() # 캐시 초기화해서 바로 목록에 뜨게 함
         return True
     return False
+
+# --- [NEW 함수] 건의사항 수정(답변) 저장 ---
+def update_suggestions(df):
+    sheet = get_sheet_instance(SHEET_SUGGESTION)
+    if sheet:
+        sheet.clear()
+        # 헤더 다시 쓰기
+        sheet.append_row(["일시", "내용", "상태", "답변"])
+        # 데이터 쓰기
+        sheet.append_rows(df.values.tolist())
+        st.cache_data.clear()
 
 def load_suggestions():
     sheet = get_sheet_instance(SHEET_SUGGESTION)
@@ -2084,18 +2104,67 @@ with tab4:
                 if len(hof)>0: 
                     if 'MVP후보' in hof.columns: hof = hof.rename(columns={'MVP후보':'MVP', '일시':'날짜'})
                     st.dataframe(hof[['날짜','MVP','득표수']], hide_index=True, use_container_width=True)
-# --- 탭 5: 소리함 ---
+# --- 탭 5: 소리함 (Q&A 게시판) ---
 with tab5:
-    st.header("🗣️ 소리함 (익명)")
-    st.write("운영진에게 하고 싶은 말을 남겨주세요.")
-    with st.form("suggestion_box"):
-        msg = st.text_area("내용", height=150)
-        if st.form_submit_button("보내기"):
-            if msg:
-                if save_suggestion(msg): st.success("전송 완료!")
-                else: st.error("전송 실패")
-            else: st.warning("내용을 입력해주세요.")
+    st.header("🗣️ 소리함 (Q&A)")
+    
+    # 1. 건의하기 (입력 폼)
+    with st.expander("📝 건의사항 남기기 (클릭)", expanded=False):
+        st.caption("익명으로 운영되며, 건전한 소통을 위해 예쁜 말을 사용해주세요.")
+        with st.form("suggestion_box"):
+            msg = st.text_area("내용을 입력하세요", height=100)
+            if st.form_submit_button("등록하기", type="primary"):
+                if msg:
+                    if save_suggestion(msg): 
+                        st.success("등록되었습니다! 아래 게시판에서 확인하세요.")
+                        time.sleep(1)
+                        st.rerun()
+                    else: st.error("전송 실패")
+                else: st.warning("내용을 입력해주세요.")
 
+    st.divider()
+
+    # 2. 건의 & 답변 게시판 (조회)
+    st.subheader("📋 건의 & 답변 게시판")
+    
+    data = load_suggestions()
+    if data:
+        # 최신순으로 뒤집기
+        df = pd.DataFrame(data)
+        
+        # 데이터가 옛날 방식([일시, 내용]만 있음)이면 에러 나니까 컬럼 보정
+        if '상태' not in df.columns: df['상태'] = '대기중'
+        if '답변' not in df.columns: df['답변'] = ''
+        
+        # 최신 글이 위로 오게 정렬
+        df = df.sort_index(ascending=False)
+
+        for _, row in df.iterrows():
+            # 상태에 따른 아이콘/색상
+            status = row.get('상태', '대기중')
+            reply = row.get('답변', '')
+            
+            if status == "완료":
+                icon = "✅"
+                badge_color = "green"
+            else:
+                icon = "⏳"
+                badge_color = "orange"
+
+            # 카드 디자인
+            with st.container(border=True):
+                c1, c2 = st.columns([0.8, 4])
+                with c1:
+                    st.caption(row['일시'][:10]) # 날짜만 표시
+                    st.markdown(f":{badge_color}[**{status}**]")
+                with c2:
+                    st.write(f"**Q.** {row['내용']}")
+                    
+                    # 답변이 있으면 표시
+                    if reply and str(reply).strip():
+                        st.info(f"**A.** {reply}", icon="💬")
+    else:
+        st.info("아직 등록된 건의사항이 없습니다.")
 # --- 탭 6: 라인업 생성 (관리자) ---
 with tab6:
     st.header("⚡ 공정 라인업 생성")
@@ -2525,11 +2594,40 @@ with tab7:
             
             st.divider()
 
-            # 2. 건의사항 확인 복구
-            st.markdown("### 🗣️ 건의사항 확인")
-            suggestions = load_suggestions()
-            if suggestions: 
-                st.dataframe(suggestions, use_container_width=True)
+            # 2. 건의사항 답변 관리 (기능 업그레이드)
+            st.markdown("### 🗣️ 건의사항 답변 관리")
+            suggestions_data = load_suggestions()
+            
+            if suggestions_data: 
+                df_sug = pd.DataFrame(suggestions_data)
+                
+                # 컬럼 보정 (옛날 데이터 호환성)
+                if '상태' not in df_sug.columns: df_sug['상태'] = '대기중'
+                if '답변' not in df_sug.columns: df_sug['답변'] = ''
+
+                # 관리자용 에디터 설정
+                edited_sug = st.data_editor(
+                    df_sug,
+                    use_container_width=True,
+                    column_config={
+                        "일시": st.column_config.TextColumn(disabled=True), # 일시는 수정 불가
+                        "내용": st.column_config.TextColumn(disabled=True), # 내용도 수정 불가
+                        "상태": st.column_config.SelectboxColumn(
+                            "처리상태", options=["대기중", "완료", "보류"], required=True
+                        ),
+                        "답변": st.column_config.TextColumn(
+                            "관리자 답변", width="large"
+                        )
+                    },
+                    hide_index=True,
+                    num_rows="dynamic" # 행 추가/삭제 가능 (필요없는 글 삭제용)
+                )
+
+                if st.button("💾 답변 저장하기", type="primary", key="save_sug_btn"):
+                    update_suggestions(edited_sug)
+                    st.success("답변이 저장되었습니다! (소리함 탭에 즉시 반영됨)")
+                    time.sleep(1)
+                    st.rerun()
             else: 
                 st.info("접수된 건의사항이 없습니다.")
 
