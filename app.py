@@ -2452,31 +2452,42 @@ with tab7:
             st.rerun()
 
         # =========================================================
-        # 섹션 1: 대시보드 & 기본 설정 (오류 수정됨 ✨)
+        # 섹션 1: 대시보드 & 기본 설정 (헤더 없어도 작동하게 수정됨 ✨)
         # =========================================================
         st.subheader("📊 오늘의 접속 현황")
         
         sheet_log = get_sheet_instance(SHEET_LOGS)
         if sheet_log:
             try:
-                # [수정] get_all_records 대신 get_all_values 사용 (더 안정적)
+                # 1. 모든 데이터 가져오기
                 rows = sheet_log.get_all_values()
                 
-                if len(rows) <= 1: # 헤더만 있거나 비어있는 경우
+                if not rows:
                     st.info("오늘 방문자가 아직 없습니다.")
                 else:
-                    # 첫 줄을 헤더로, 나머지를 데이터로 변환
-                    headers = rows[0]
-                    data = rows[1:]
-                    df_log = pd.DataFrame(data, columns=headers)
+                    # 2. 일단 데이터프레임으로 변환 (헤더 지정 없이 raw 데이터로)
+                    df_log = pd.DataFrame(rows)
                     
-                    # [핵심 수정] '일시' 컬럼이 있는지 확인하는 안전장치 추가
+                    # 3. 데이터 정제 및 헤더 강제 주입
+                    # 구글시트는 빈 컬럼도 가져올 수 있으므로, 앞의 4개 컬럼만 잘라서 씁니다.
+                    # (일시, 유형, 접속자, IP주소)
+                    if len(df_log.columns) >= 4:
+                        df_log = df_log.iloc[:, :4] # 4번째 칸까지만 자름
+                        df_log.columns = ["일시", "유형", "접속자(추정)", "IP주소"] # 헤더 강제 부여
+                    
+                    # [예외 처리] 만약 1행이 진짜 헤더("일시" 라는 글자)라면 제거
+                    # (혹시 나중에 헤더를 넣으실 수도 있으니 안전장치)
+                    if str(df_log.iloc[0]['일시']) == "일시":
+                        df_log = df_log.iloc[1:] # 1행 삭제
+
+                    # -------------------------------------------------------
+                    # 이후 로직은 동일 (날짜 필터링 및 통계)
+                    # -------------------------------------------------------
                     if '일시' in df_log.columns:
-                        # 한국 시간(KST) 기준 오늘 날짜 필터링
                         now_kst = datetime.utcnow() + timedelta(hours=9)
                         today_str = now_kst.strftime("%Y-%m-%d")
                         
-                        # 날짜 컬럼 생성 (에러 방지용 문자열 변환)
+                        # 날짜 컬럼 문자열 변환 및 필터링
                         df_log['날짜'] = df_log['일시'].astype(str).apply(lambda x: x.split(" ")[0])
                         df_today = df_log[df_log['날짜'] == today_str]
                         
@@ -2489,12 +2500,9 @@ with tab7:
                         m2.metric("라인업 조회", f"{lineup_count}회")
                         
                         with st.expander("📜 상세 접속 로그 보기"):
-                            # 필요한 컬럼만 안전하게 표시
-                            cols_to_show = [c for c in ['일시', '유형', '접속자(추정)', 'IP주소'] if c in df_log.columns]
-                            st.dataframe(df_today[cols_to_show], hide_index=True)
+                            st.dataframe(df_today[["일시", "유형", "접속자(추정)", "IP주소"]], hide_index=True)
                     else:
-                        st.warning("⚠️ 로그 시트 형식이 올바르지 않습니다. (헤더 '일시' 누락)")
-                        st.write("현재 데이터:", df_log.head())
+                        st.error("데이터 구조를 해석할 수 없습니다.")
 
             except Exception as e:
                 st.error(f"통계 로딩 실패: {e}")
