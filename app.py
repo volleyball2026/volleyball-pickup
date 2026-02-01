@@ -13,15 +13,22 @@ import base64
 import os
 from streamlit.web.server.websocket_headers import _get_websocket_headers
 
+# [수정 1] 페이지 설정은 반드시 import 바로 아래, 맨 처음에 와야 합니다!
+st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# [수정] 모바일 최적화 CSS (디자인 복구 + 깔끔한 알약 스타일 통일)
+# [수정 2] 모바일 최적화 CSS (헤더 숨김 코드 삭제하여 사이드바 버튼 복구)
 st.markdown("""
     <style>
-        /* 1. 상단 헤더 숨기기 */
-        header {visibility: hidden;}
+        /* 1. 상단 여백 조절 (헤더를 숨기지 않고 여백만 줄임) */
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 5rem !important;
+        }
+        
+        /* (중요) 사이드바 여는 버튼이 보이도록 header 설정 수정 */
+        header[data-testid="stHeader"] {
+            background-color: rgba(0,0,0,0); /* 투명하게 */
+            z-index: 1;
         }
 
         /* 2. 탭바 고정 및 가로 스크롤 설정 */
@@ -46,7 +53,6 @@ st.markdown("""
 
         /* ================================================================= */
         /* [디자인 통일] 모든 탭 버튼을 '알약 모양'으로 예쁘게 만듭니다. */
-        /* 복잡한 색상 구분 로직을 제거하여 오류를 원천 차단했습니다. */
         /* ================================================================= */
         button[data-baseweb="tab"] {
             height: 40px !important;               
@@ -95,6 +101,7 @@ st.markdown("""
 # --- [설정] ---
 DOC_NAME = "배구픽업관리"
 SHEET_APPLICANTS = "참가자명단"
+# ... (이후 코드는 그대로 둠)
 SHEET_GAME_INFO = "게임정보"
 SHEET_HISTORY = "경기기록"
 SHEET_BLACKLIST = "블랙리스트"
@@ -1293,9 +1300,6 @@ def generate_vega_priority_schedule(df):
         
     return final_rounds
     
-# --- [메인 화면] ---
-st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
-
 # [NEW] 사이트 접속 로그 기록
 user_guess = st.session_state.get('my_name', '익명') 
 log_visit("메인접속", user_guess)
