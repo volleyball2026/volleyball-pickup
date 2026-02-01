@@ -2598,22 +2598,57 @@ with tab7:
         st.divider()
         
         # =========================================================
-        # 섹션 4: 게임 관리
+        # 섹션 4: 게임 관리 (상세 폼 복구 완료 ✨)
         # =========================================================
         st.subheader("🛠️ 게임 관리")
         tab_new, tab_close = st.tabs(["🆕 새 게임", "🏁 종료"])
+        
+        # 1. 새 게임 만들기 (상세 입력)
         with tab_new:
-            with st.form("new_game_form"):
-                title = st.text_input("제목"); dt = st.text_input("일시")
-                reset = st.checkbox("명단 초기화", value=True)
-                if st.form_submit_button("개설"):
-                    if reset: archive_current_game(); clear_applicants()
-                    save_game_info({"제목":title, "일시":dt, "마감일시":"2099-12-31", "성별":"혼성", "장소":"체육관", "참가비":"-", "계좌":"-", "설명":"-", "연락처":"-"})
-                    st.success("개설 완료"); st.rerun()
+            with st.form("create_game_full"):
+                st.caption("새로운 게임을 만들면 기존 명단은 자동으로 '지난 기록'으로 저장됩니다.")
+                reset_chk = st.checkbox("기존 명단 초기화 (필수)", value=True)
+                
+                c_info1, c_info2 = st.columns(2)
+                with c_info1:
+                    title = st.text_input("게임 제목", placeholder="X월 X일 정기모임")
+                    dt = st.text_input("일시", placeholder="YYYY-MM-DD HH:MM")
+                    loc = st.text_input("장소", value="순천조례초 체육관")
+                    gender = st.radio("성별", ["혼성", "남자", "여자"], horizontal=True)
+                with c_info2:
+                    # 마감 시간 설정을 위한 날짜/시간 입력
+                    dead_date = st.date_input("마감 날짜")
+                    dead_time = st.time_input("마감 시간")
+                    fee = st.text_input("참가비", value="5,000원")
+                    acc = st.text_input("계좌", placeholder="카카오뱅크 xxx-xxxx")
+                
+                desc = st.text_area("공지사항/설명")
+                contact = st.text_input("문의 연락처")
+
+                if st.form_submit_button("개설하기"):
+                    if reset_chk:
+                        archive_current_game()
+                        clear_applicants()
+                    
+                    # 마감일시 문자열 조합
+                    deadline_str = f"{dead_date} {dead_time.strftime('%H:%M')}"
+                    
+                    info = {
+                        "제목": title, "일시": dt, "장소": loc, "성별": gender,
+                        "참가비": fee, "계좌": acc, "설명": desc, "연락처": contact,
+                        "마감일시": deadline_str
+                    }
+                    save_game_info(info)
+                    st.success("새 게임이 개설되었습니다!")
+                    time.sleep(1.0)
+                    st.rerun()
+
+        # 2. 게임 종료 (CLOSED)
         with tab_close:
-            if st.button("게임 종료 (CLOSED)"):
+            st.warning("게임을 종료하면 '모집 마감' 상태가 되며, 명단은 그대로 유지됩니다.")
+            if st.button("현재 게임 종료하기 (CLOSED)"):
                 archive_current_game()
-                # [수정] 모든 필수 키 포함
+                # 모든 필수 정보를 빈칸('-')으로 채워서 저장
                 close_info = {
                     "제목": "CLOSED", "일시": "-", "장소": "-", "성별": "-", 
                     "참가비": "-", "계좌": "-", "설명": "-", "연락처": "-", "마감일시": "-"
