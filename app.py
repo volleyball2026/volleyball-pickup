@@ -628,6 +628,8 @@ def update_suggestions(df):
         sheet.append_rows(df.values.tolist())
         st.cache_data.clear()
 
+# ▼▼▼ [수정된 코드] (위에 한 줄 추가!) ▼▼▼
+@st.cache_data(ttl=60)  # <-- 1분 동안은 다시 부르지 말고 기억해라!
 def load_suggestions():
     sheet = get_sheet_instance(SHEET_SUGGESTION)
     if sheet: return sheet.get_all_records()
