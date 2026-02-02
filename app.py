@@ -2662,39 +2662,75 @@ with tab7:
         st.divider()
 
         # =========================================================
-        # 섹션 3: 참가자 관리
+        # 섹션 3: 참가자 관리 (배치 저장 적용 ✨)
         # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
+        
         if apps:
             df_manage = pd.DataFrame(apps)
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper()=='O' else False)
             
-            # 명단 분리
+            # 명단 분리 (인덱스 유지)
             df_manage = df_manage.reset_index(drop=True)
             mask = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]"))
             df_confirmed = df_manage[mask]
             df_waiting = df_manage[~mask]
 
-            st.success(f"📌 **확정 ({len(df_confirmed)}명)**")
-            ed_conf = st.data_editor(df_confirmed[["이름","연락처","입금_bool","1순위","비고"]], hide_index=True, key="ed_conf")
-            
-            if not df_waiting.empty:
-                st.warning(f"⏳ **대기 ({len(df_waiting)}명)**")
-                ed_wait = st.data_editor(df_waiting[["이름","연락처","입금_bool","1순위","비고"]], hide_index=True, key="ed_wait")
-            
-            if st.button("💾 저장하기", type="primary"):
-                for i, r in ed_conf.iterrows(): df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
-                if not df_waiting.empty:
-                    for i, r in ed_wait.iterrows(): df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
+            # -------------------------------------------------------------
+            # [핵심] st.form으로 감싸서 체크박스를 눌러도 바로 새로고침 되지 않게 함
+            # -------------------------------------------------------------
+            with st.form("deposit_check_form"):
+                st.caption("💡 체크박스를 여러 개 누르고, 맨 아래 [일괄 저장] 버튼을 누르면 한 번에 반영됩니다.")
                 
-                df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
-                update_lineup(df_manage)
-                st.success("저장 완료")
-                time.sleep(0.5); st.rerun()
-        else: st.info("신청자 없음")
+                st.success(f"📌 **확정 ({len(df_confirmed)}명)**")
+                # num_rows="fixed"로 설정하여 행 추가/삭제 막음 (안정성)
+                ed_conf = st.data_editor(
+                    df_confirmed[["이름","연락처","입금_bool","1순위","비고"]], 
+                    hide_index=True, 
+                    key="ed_conf",
+                    use_container_width=True
+                )
+                
+                if not df_waiting.empty:
+                    st.warning(f"⏳ **대기 ({len(df_waiting)}명)**")
+                    ed_wait = st.data_editor(
+                        df_waiting[["이름","연락처","입금_bool","1순위","비고"]], 
+                        hide_index=True, 
+                        key="ed_wait",
+                        use_container_width=True
+                    )
+                else:
+                    ed_wait = pd.DataFrame() # 빈 데이터프레임 처리
 
+                st.divider()
+                
+                # 일반 button 대신 form_submit_button 사용
+                submitted = st.form_submit_button("💾 일괄 저장하기", type="primary")
+                
+                if submitted:
+                    # 1. 확정 명단 업데이트
+                    for i, r in ed_conf.iterrows(): 
+                        # 원본 데이터프레임(df_manage)의 해당 인덱스(r.name) 업데이트
+                        df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
+                        df_manage.loc[r.name, '비고'] = r['비고'] # 비고 수정도 반영
+                    
+                    # 2. 대기 명단 업데이트
+                    if not df_waiting.empty and not ed_wait.empty:
+                        for i, r in ed_wait.iterrows(): 
+                            df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
+                            df_manage.loc[r.name, '비고'] = r['비고']
+                    
+                    # 3. 최종 변환 및 저장
+                    df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
+                    update_lineup(df_manage)
+                    
+                    st.success("✅ 모든 변경사항이 저장되었습니다!")
+                    time.sleep(0.5)
+                    st.rerun() # 저장 후 딱 한 번만 새로고침
+        else: 
+            st.info("신청자 없음")
         st.divider()
         
         # =========================================================
