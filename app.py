@@ -2203,6 +2203,7 @@ with tab5:
                         st.info(f"**A.** {reply}", icon="💬")
     else:
         st.info("아직 등록된 건의사항이 없습니다.")
+        
 # --- 탭 6: 라인업 생성 (관리자) ---
 with tab6:
     st.header("⚡ 공정 라인업 생성")
@@ -2343,22 +2344,18 @@ with tab6:
                     except Exception as e:
                         st.error(f"데이터 복구 중 오류: {e}")
 
-            # ... (위쪽 버튼 코드는 건드리지 마세요!) ...
-
-            # [시각화 표시]  <-- 여기서부터 아래 코드로 덮어씌우세요!
+            # [시각화 표시] (여기서부터 중복 제거하고 딱 한 번만 나오게 함!)
             if 'fair_results' in st.session_state:
                 # 결과 매핑
                 schedule_map = {name: {} for name in df['이름']}
                 
                 for r_num, (team_a, team_b) in st.session_state['fair_results'].items():
                     for p in team_a: 
-                        # [핵심 수정] 명단에 있는 사람만 처리 (삭제된 사람 건너뜀)
                         if p['이름'] in schedule_map:
                             schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']
                             schedule_map[p['이름']][f"팀{r_num}"] = "A팀"
                             
                     for p in team_b: 
-                        # [핵심 수정] 명단에 있는 사람만 처리
                         if p['이름'] in schedule_map:
                             schedule_map[p['이름']][f"확정{r_num}"] = p['assigned_pos']
                             schedule_map[p['이름']][f"팀{r_num}"] = "B팀"
@@ -2377,7 +2374,6 @@ with tab6:
                     with tab:
                         team_a, team_b = st.session_state['fair_results'][i]
                         
-                        # 화면에 보여줄 때도 명단에 없는 유령 선수는 제외하고 보여줌
                         valid_team_a = [p for p in team_a if p['이름'] in schedule_map]
                         valid_team_b = [p for p in team_b if p['이름'] in schedule_map]
                         
@@ -2436,99 +2432,15 @@ with tab6:
                         html_b = render_tactical_board(df_b, "B팀", "assigned_pos")
                         st.markdown(html_b, unsafe_allow_html=True)
                         
-                        # [대기 인원 점수 표시 복구]
+                        # 대기 인원 표시
                         bench = [p for p in valid_team_a+valid_team_b if p['assigned_pos']=="대기"]
                         if bench:
                             st.divider()
                             st.caption("🛌 **대기 인원**")
-                            # 리스트 형태로 점수와 사유를 상세히 표시
                             for p in bench:
                                 sc = p.get('priority_score', 0)
                                 re_txt = p.get('score_reason', '')
                                 st.write(f"- {p['이름']} (희망: {p.get('1순위', '-')})")
-                                # format_score_html을 사용하여 사유까지 예쁘게 표시
-                                st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
-                
-                # DF 반영
-                for idx, row in df.iterrows():
-                    name = row['이름']
-                    if name in schedule_map:
-                        for r in range(1, 5): 
-                            df.at[idx, f'확정{r}'] = schedule_map[name].get(f'확정{r}', '')
-                            df.at[idx, f'팀{r}'] = schedule_map[name].get(f'팀{r}', '')
-                
-                # 탭별 시각화
-                r_tabs = st.tabs(["1·2 세트", "3·4 세트", "5·6 세트", "7·8 세트"])
-                for i, tab in enumerate(r_tabs, 1):
-                    with tab:
-                        team_a, team_b = st.session_state['fair_results'][i]
-                        
-                        count_a = len([p for p in team_a if p['assigned_pos'] != "대기"])
-                        count_b = len([p for p in team_b if p['assigned_pos'] != "대기"])
-                        
-                        # 전력 점수 계산
-                        def calculate_team_sum(team_list):
-                            total = 0
-                            for p in team_list:
-                                if p['assigned_pos'] != "대기":
-                                    lv = str(p.get('레벨', '입문')).split(" ")[0]
-                                    total += LEVEL_MAP.get(lv, 1)
-                            return total
-                        sum_a = calculate_team_sum(team_a)
-                        sum_b = calculate_team_sum(team_b)
-
-                        # 제외 포지션 표시
-                        def get_missing_pos_list(player_list):
-                            current_pos = set()
-                            for p in player_list:
-                                if p.get('assigned_pos') and p['assigned_pos'] != "대기":
-                                    current_pos.add(p['assigned_pos'])
-                            full_set = set(POSITIONS_ALL)
-                            return list(full_set - current_pos)
-                        
-                        miss_a = get_missing_pos_list(team_a)
-                        miss_b = get_missing_pos_list(team_b)
-                        miss_txt_a = ", ".join(miss_a) if miss_a else "없음"
-                        miss_txt_b = ", ".join(miss_b) if miss_b else "없음"
-
-                        st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}** (🔴A제외: {miss_txt_a} | 🔵B제외: {miss_txt_b})")
-                        
-                        # 밸런스 바
-                        b_col1, b_col2 = st.columns([1, 4])
-                        with b_col1:
-                            diff = sum_a - sum_b
-                            delta_color = "normal" if abs(diff) <= 2 else "inverse"
-                            st.metric("🔴 A팀 전력", f"{sum_a}", delta=f"격차: {diff}", delta_color=delta_color)
-                        with b_col2:
-                            max_possible = max(count_a, count_b) * 5 if max(count_a, count_b) > 0 else 1
-                            st.caption(f"전력 밸런스: A팀({sum_a}) vs B팀({sum_b})")
-                            st.progress(min(sum_a / max_possible, 1.0))
-                            st.progress(min(sum_b / max_possible, 1.0))
-
-                        # Court View (작전판)
-                        st.markdown("### 🏟️ Court View")
-                        df_a = pd.DataFrame(team_a)
-                        df_b = pd.DataFrame(team_b)
-                        
-                        html_a = render_tactical_board(df_a, "A팀", "assigned_pos")
-                        st.markdown(html_a, unsafe_allow_html=True)
-                        
-                        st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
-                        
-                        html_b = render_tactical_board(df_b, "B팀", "assigned_pos")
-                        st.markdown(html_b, unsafe_allow_html=True)
-                        
-                        # [대기 인원 점수 표시 복구]
-                        bench = [p for p in team_a+team_b if p['assigned_pos']=="대기"]
-                        if bench:
-                            st.divider()
-                            st.caption("🛌 **대기 인원**")
-                            # 리스트 형태로 점수와 사유를 상세히 표시
-                            for p in bench:
-                                sc = p.get('priority_score', 0)
-                                re_txt = p.get('score_reason', '')
-                                st.write(f"- {p['이름']} (희망: {p.get('1순위', '-')})")
-                                # format_score_html을 사용하여 사유까지 예쁘게 표시
                                 st.markdown(format_score_html(sc, re_txt), unsafe_allow_html=True)
 
             st.divider()
