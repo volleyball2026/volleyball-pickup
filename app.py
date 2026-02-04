@@ -2285,7 +2285,20 @@ with tab6:
                 except: st.error("텍스트 생성 오류")
             
             st.divider()
-
+            # [NEW] VEGA 블라인드 설정 (관리자 전용)
+            if current_game:
+                is_blind_now = str(current_game.get('베가블라인드', 'X')).upper().strip() == 'O'
+                col_b1, col_b2 = st.columns([1, 2])
+                with col_b1:
+                    blind_toggle = st.toggle("🕵️‍♂️ VEGA 블라인드 모드", value=is_blind_now)
+                with col_b2:
+                    if blind_toggle: st.caption("🔒 **ON**: VEGA 회원 이름이 가려집니다.")
+                    else: st.caption("🔓 **OFF**: 모든 이름이 공개됩니다.")
+                
+                if blind_toggle != is_blind_now:
+                    if toggle_vega_blind_mode(blind_toggle):
+                        st.rerun()
+                        
             # [핵심 기능] 라인업 생성 및 새로고침 버튼
             col_gen, col_refresh = st.columns([3, 1])
             with col_gen:
