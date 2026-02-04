@@ -345,15 +345,15 @@ def format_score_html(score, reason):
     
     return html
 
-def save_game_info(info_dict):
+# [수정] 게임 정보 저장 (11번째 컬럼 추가)
+def save_game_info(info):
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
-        # [수정] 맨 뒤에 'X' (비공개 기본값) 추가 (총 10번째 컬럼)
+        # 10번째: 공개여부, 11번째: 베가블라인드여부 (기본 X)
         sheet.append_row([
-            info_dict['제목'], info_dict['일시'], info_dict['장소'], 
-            info_dict['성별'], info_dict['참가비'], info_dict['계좌'], 
-            info_dict['설명'], info_dict['연락처'], info_dict['마감일시'],
-            "X" # 기본은 비공개
+            info['제목'], info['일시'], info['장소'], info['성별'], 
+            info['참가비'], info['계좌'], info['설명'], info['연락처'], 
+            info['마감일시'], "X", "X" 
         ])
         st.cache_data.clear()
 
@@ -373,19 +373,42 @@ def toggle_game_visibility(is_visible):
             return False
     return False
 
-@st.cache_data(ttl=600) # 갱신 확인을 위해 ttl 단축
+# [수정] 게임 정보 읽기 (베가블라인드 키 추가)
+@st.cache_data(ttl=600)
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
     if sheet:
-        all_games = sheet.get_all_records()
-        if all_games: 
-            game = all_games[-1]
-            # 공개여부 컬럼이 없으면(옛날 데이터) 기본 'O'로 처리
-            if '공개여부' not in game and len(game) < 10:
-                game['공개여부'] = 'O' 
-            # 딕셔너리 키로 접근할 때 안전장치
+        # 헤더가 없거나 변경될 수 있으므로 values로 가져와서 처리
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            headers = data[0]
+            last_row = data[-1]
+            game = dict(zip(headers, last_row))
+            
+            # 안전장치: 컬럼 인덱스로 접근 (API 변경 대응)
+            if len(last_row) >= 10: game['공개여부'] = last_row[9]
+            else: game['공개여부'] = 'X'
+            
+            if len(last_row) >= 11: game['베가블라인드'] = last_row[10]
+            else: game['베가블라인드'] = 'X'
+            
             return game
     return None
+
+# [신규] 베가 블라인드 모드 토글 함수
+def toggle_vega_blind_mode(is_blind):
+    sheet = get_sheet_instance(SHEET_GAME_INFO)
+    if sheet:
+        try:
+            data = sheet.get_all_values()
+            if len(data) > 1:
+                last_row_idx = len(data)
+                val = "O" if is_blind else "X"
+                sheet.update_cell(last_row_idx, 11, val) # 11번째 컬럼 업데이트
+                st.cache_data.clear()
+                return True
+        except: pass
+    return False
 
 def archive_current_game():
     src_sheet = get_sheet_instance(SHEET_APPLICANTS)
