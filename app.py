@@ -1639,12 +1639,28 @@ with tab1:
                 cc1, cc2 = st.columns(2)
                 with cc1: c_name = st.text_input("이름")
                 with cc2: c_phone = st.text_input("연락처")
+                
                 if st.form_submit_button("취소하기"):
-                    if is_expired: save_suggestion(f"🚨 [마감후취소] {c_name} ({c_phone}) 취소")
+                    # [핵심 수정] 마감 후 취소 시, 개인정보를 가려서 저장합니다.
+                    if is_expired:
+                        # 이름 가리기 (김철수 -> 김O수)
+                        masked_name = anonymize_name(c_name)
+                        # 전화번호 뒤 4자리만 남기기
+                        masked_phone = c_phone[-4:] if len(c_phone) >= 4 else "****"
+                        
+                        # 소리함에는 가려진 정보로 저장
+                        save_suggestion(f"🚨 [마감후취소] {masked_name} (뒷번호 {masked_phone}) 취소 요청")
+                    
                     suc, msg = cancel_applicant(c_name, c_phone)
                     if not suc: suc, msg = cancel_applicant(f"[VEGA] {c_name}", c_phone)
-                    if suc: st.success(msg); st.toast("🗑️ 취소되었습니다."); time.sleep(1.5); st.rerun() 
-                    else: st.error(msg)
+                    
+                    if suc: 
+                        st.success(msg)
+                        st.toast("🗑️ 취소되었습니다.")
+                        time.sleep(1.5)
+                        st.rerun() 
+                    else: 
+                        st.error(msg)
 
         # 현황판 (기존 유지 - 20명 기준으로 보여줌)
         st.divider()
