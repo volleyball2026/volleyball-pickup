@@ -833,9 +833,9 @@ def render_applicant_list_html(df):
     html_code += "</div>"
     return html_code
     
-# --- [UI 함수] 작전판(Court View) HTML 생성 (순위 뱃지 복구 + 모바일 최적화) ---
-def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, round_num=None):
-    # 팀 색상 설정
+# [수정된 함수] 작전판 HTML 생성 (기존 디자인 유지 + 블라인드 모드 추가)
+def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None, is_vega_blind=False):
+    # 1. 팀 색상 설정 (기존 코드 유지)
     if team_type == "A팀":
         bg_color = "#FFEBEE" # 연한 빨강 배경
         border_color = "#D32F2F" # 진한 빨강 테두리
@@ -845,12 +845,12 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
         border_color = "#1976D2" # 진한 파랑 테두리
         header_text = "🔵 B팀 (픽업)"
 
-    # 포지션별 배치 정의
+    # 포지션별 배치 정의 (기존 코드 유지)
     row1 = ["레프트", "속공", "세터", "라이트"]
     row2 = ["앞차", "백차"]
     row3 = ["레프트백", "센터백", "라이트백"]
 
-    # 선수 데이터 매핑
+    # 선수 데이터 매핑 (기존 코드 유지)
     player_map = {}
     
     if not team_df.empty and col_pos in team_df.columns:
@@ -864,90 +864,111 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
             # 점수 및 사유 가져오기
             score = 0
             reason = ""
-            if round_score_db and round_num:
-                if real_name in round_score_db.get(round_num, {}):
-                    p_data = round_score_db[round_num][real_name]
+            if score_db and r_num:
+                if real_name in score_db.get(r_num, {}):
+                    p_data = score_db[r_num][real_name]
                     score = p_data['score']
                     reason = p_data.get('reason', '')
             else:
                 score = row.get('priority_score', 0)
                 reason = row.get('score_reason', '')
             
-            # [NEW] 순위 정보 확인 (뱃지용)
+            # 순위 정보 확인 (뱃지용) - 기존 로직 유지
             w1 = str(row.get('1순위', '')).strip()
             w2 = str(row.get('2순위', '')).strip()
             w3 = str(row.get('3순위', '')).strip()
             
-            rank_badge = "random" # 기본값: 무 (랜덤)
+            rank_badge = "random"
             if pos == w1: rank_badge = "1st"
             elif pos == w2: rank_badge = "2nd"
             elif pos == w3: rank_badge = "3rd"
                 
-            player_map[pos] = {"name": name, "score": score, "reason": reason, "rank": rank_badge}
+            player_map[pos] = {"name": name, "score": score, "reason": reason, "rank": rank_badge, "real_name": real_name}
 
-    # HTML 생성 헬퍼
+    # HTML 생성 헬퍼 (여기에 블라인드 로직 추가!)
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
+            # --- [기존 변수들 준비] ---
             p_name = p_data['name']
             p_score = f"{p_data['score']:.2f}"
             p_reason = p_data['reason']
             p_rank = p_data['rank']
+            is_vega = "[VEGA]" in p_data['real_name']
+
+            # ============================================================
+            # [핵심 변경] 블라인드 모드 ON + 베가 회원이면 -> 가리기
+            # ============================================================
+            if is_vega_blind and is_vega:
+                # 1. 블라인드 스타일 적용
+                display_name = "🔒 VEGA"
+                rank_html = "" # 뱃지 숨김
+                vega_badge = "" # 뱃지 숨김
+                p_score_txt = "포지션 협의" # 점수 대신 안내 문구
+                formatted_reason = "" # 사유 숨김
+                
+                # 빗금 패턴 배경 (블라인드 전용)
+                card_style = f"background: linear-gradient(135deg, #e0e0e0 25%, #f5f5f5 25%, #f5f5f5 50%, #e0e0e0 50%, #e0e0e0 75%, #f5f5f5 75%, #f5f5f5 100%); background-size: 10px 10px; border: 1px solid {border_color}; color: #555;"
             
-            # [VEGA 뱃지]
-            vega_badge = ""
-            display_name = p_name
-            if "[VEGA]" in p_name:
-                display_name = p_name.replace("[VEGA]", "").strip()
-                vega_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>V</span>"
-            
-            # [NEW] 순위 뱃지 생성
-            rank_html = ""
-            if p_rank == "1st":
-                rank_html = "<span style='color:#1565C0; background-color:#E3F2FD; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>1순위</span>"
-            elif p_rank == "2nd":
-                rank_html = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>2순위</span>"
-            elif p_rank == "3rd":
-                rank_html = "<span style='color:#EF6C00; background-color:#FFF3E0; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>3순위</span>"
             else:
-                rank_html = "<span style='color:#C62828; background-color:#FFEBEE; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>무</span>"
+                # 2. 기존 스타일 적용 (사용자님 코드 그대로!)
+                display_name = p_name.replace("[VEGA]", "").strip()
+                p_score_txt = p_score
+                
+                # VEGA 뱃지
+                vega_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>V</span>" if is_vega else ""
+                
+                # 순위 뱃지 (기존 코드 복구)
+                rank_html = ""
+                if p_rank == "1st":
+                    rank_html = "<span style='color:#1565C0; background-color:#E3F2FD; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>1순위</span>"
+                elif p_rank == "2nd":
+                    rank_html = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>2순위</span>"
+                elif p_rank == "3rd":
+                    rank_html = "<span style='color:#EF6C00; background-color:#FFF3E0; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>3순위</span>"
+                else:
+                    rank_html = "<span style='color:#C62828; background-color:#FFEBEE; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>무</span>"
 
-            # [점수 내역 색상 적용]
-            reason_items = p_reason.split()
-            formatted_reason = ""
-            for item in reason_items:
-                color = "#555"
-                if item.startswith("+"): color = "#1976D2"
-                elif item.startswith("-"): color = "#D32F2F"
-                elif "기본" in item: color = "#9E9E9E"
-                formatted_reason += f"<span style='color:{color}; margin-right:2px;'>{item}</span>"
+                # 점수 내역 색상 (기존 코드 복구)
+                reason_items = p_reason.split()
+                formatted_reason = ""
+                for item in reason_items:
+                    color = "#555"
+                    if item.startswith("+"): color = "#1976D2"
+                    elif item.startswith("-"): color = "#D32F2F"
+                    elif "기본" in item: color = "#9E9E9E"
+                    formatted_reason += f"<span style='color:{color}; margin-right:2px;'>{item}</span>"
+                
+                # 일반 배경
+                card_style = f"background: white; border: 1px solid {border_color}; color: #000;"
 
+            # ============================================================
+            # [HTML 조립] (하나의 틀로 통합)
+            # ============================================================
             return (
-                f"<div style='background: white; border: 1px solid {border_color}; border-radius: 6px; "
-                f"padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); "
+                f"<div style='{card_style} border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); "
                 f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
                 
-                # 포지션명 + 순위 뱃지 (한 줄에 표시)
+                # 포지션명 + 뱃지
                 f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px; white-space: nowrap;'>"
                 f"{pos_name}{rank_html}"
                 f"</div>"
                 
                 # 이름
-                f"<div style='font-size: 0.8em; font-weight: 800; color: #000; margin-bottom: 1px; "
-                f"line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>"
+                f"<div style='font-size: 0.8em; font-weight: 800; margin-bottom: 1px; line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>"
                 f"{vega_badge}{display_name}"
                 f"</div>"
                 
-                # 총점
-                f"<div style='font-size: 0.7em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 2px;'>{p_score}</div>"
+                # 총점 (또는 블라인드 안내 문구)
+                f"<div style='font-size: 0.7em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 2px;'>{p_score_txt}</div>"
                 
-                # 상세 내역
+                # 상세 내역 (블라인드면 빈칸)
                 f"<div style='font-size: 0.5em; line-height: 1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
                 
                 f"</div>"
             )
         else:
-            # 빈 자리
+            # 빈 자리 (기존 코드 유지)
             return (
                 f"<div style='border: 1px dashed #ddd; border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; "
                 f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
@@ -956,7 +977,7 @@ def render_tactical_board(team_df, team_type, col_pos, round_score_db=None, roun
                 f"</div>"
             )
 
-    # 전체 보드 HTML 조립
+    # 전체 보드 HTML 조립 (기존 코드 유지)
     board_html = (
         f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 10px; padding: 6px 2px; margin-bottom: 10px;'>"
         f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.85em; margin-bottom: 4px;'>{header_text}</div>"
@@ -1857,14 +1878,22 @@ with tab2:
                         if col_pos in df_final.columns and col_team in df_final.columns:
                             playing = df_final[df_final[col_pos].astype(str).str.strip() != '']
                             
+                            # ▼▼▼ [여기서부터 붙여넣으세요] ▼▼▼
                             if not playing.empty:
+                                # [NEW] 블라인드 설정 확인 (구글 시트에서 설정 읽기)
+                                is_blind_mode = False
+                                if current_game and str(current_game.get('베가블라인드', 'X')).upper() == 'O':
+                                    is_blind_mode = True
+                                    if i == 0: # 첫 번째 탭에만 안내 문구 표시
+                                        st.caption("🕵️‍♂️ **VEGA 블라인드 모드 ON**: 베가팀 명단과 점수는 가려집니다.")
+
                                 real_players = playing[playing[col_pos] != "대기"]
                                 if not real_players.empty:
                                     team_a_df = real_players[real_players[col_team]=="A팀"]
                                     team_b_df = real_players[real_players[col_team]=="B팀"]
                                     count_a = len(team_a_df); count_b = len(team_b_df)
                                     
-                                    # (제외 포지션 계산 생략 - 함수 호출 유지)
+                                    # (기존 기능 유지) 제외 포지션 계산 로직
                                     def get_missing_pos(df_team, pos_col):
                                         if df_team.empty: return []
                                         current_pos = set(df_team[pos_col].unique())
@@ -1889,20 +1918,22 @@ with tab2:
                                     # [작전판 출력]
                                     st.markdown("### 🏟️ Court View")
                                     
-                                    html_a = render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i)
+                                    # [핵심 수정] is_vega_blind 옵션 전달!
+                                    html_a = render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i, is_vega_blind=is_blind_mode)
                                     st.markdown(html_a, unsafe_allow_html=True)
                                     
                                     st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
                                     
-                                    html_b = render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i)
+                                    html_b = render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i, is_vega_blind=is_blind_mode)
                                     st.markdown(html_b, unsafe_allow_html=True)
                                 
-                                # 대기 인원
+                                # [대기 인원 표시] (블라인드 적용)
                                 bench = playing[playing[col_pos]=="대기"]
                                 if not bench.empty:
                                     st.divider()
                                     st.caption(f"🛌 **대기 선수 (다음 세트 출전 1순위)**")
                                     cols = st.columns(len(bench)) if len(bench) > 0 else []
+                                    
                                     for idx, (_, r) in enumerate(bench.iterrows()):
                                         sc = 0
                                         if i in round_score_db and r['이름'] in round_score_db[i]:
@@ -1910,11 +1941,19 @@ with tab2:
                                         
                                         if idx < len(cols):
                                             with cols[idx]:
+                                                # [대기자 이름 가리기 로직]
+                                                d_name = r['이름_masked']
+                                                d_score = f"{sc:.2f}"
+                                                
+                                                if is_blind_mode and "[VEGA]" in r['이름']:
+                                                    d_name = "🔒 VEGA"
+                                                    d_score = "-" # 점수도 가림
+                                                
                                                 st.markdown(f"""
                                                 <div style="text-align: center; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 8px;">
-                                                    <div style="font-weight: bold; font-size: 0.9em; color: #333; margin-bottom: 2px;">{r['이름_masked']}</div>
+                                                    <div style="font-weight: bold; font-size: 0.9em; color: #333; margin-bottom: 2px;">{d_name}</div>
                                                     <div style="font-size: 0.75em; color: #666; margin-bottom: 2px;">(희망: {r.get('1순위', '-')})</div>
-                                                    <div style="font-size: 0.8em; color: #1976D2; font-weight: bold;">{sc:.2f}</div>
+                                                    <div style="font-size: 0.8em; color: #1976D2; font-weight: bold;">{d_score}</div>
                                                 </div>
                                                 """, unsafe_allow_html=True)
                         else:
@@ -2285,21 +2324,26 @@ with tab6:
                 except: st.error("텍스트 생성 오류")
             
             st.divider()
-            # [NEW] VEGA 블라인드 설정 (관리자 전용)
+            
+            # [NEW] VEGA 블라인드 설정 (관리자 전용 스위치)
             if current_game:
+                # 1. 현재 설정값 읽어오기 (없으면 기본값 X)
                 is_blind_now = str(current_game.get('베가블라인드', 'X')).upper().strip() == 'O'
+                
+                # 2. 스위치 UI 배치
                 col_b1, col_b2 = st.columns([1, 2])
                 with col_b1:
                     blind_toggle = st.toggle("🕵️‍♂️ VEGA 블라인드 모드", value=is_blind_now)
                 with col_b2:
-                    if blind_toggle: st.caption("🔒 **ON**: VEGA 회원 이름이 가려집니다.")
-                    else: st.caption("🔓 **OFF**: 모든 이름이 공개됩니다.")
+                    if blind_toggle: st.caption("🔒 **ON**: 라인업 공개 시 VEGA 회원의 이름이 가려집니다.")
+                    else: st.caption("🔓 **OFF**: 모든 회원의 이름이 정상적으로 공개됩니다.")
                 
+                # 3. 값이 바뀌었을 때만 저장하고 새로고침
                 if blind_toggle != is_blind_now:
                     if toggle_vega_blind_mode(blind_toggle):
                         st.rerun()
-                        
-            # [핵심 기능] 라인업 생성 및 새로고침 버튼
+
+            # [핵심 기능] 라인업 생성 및 새로고침 버튼 (기존 코드 연결)
             col_gen, col_refresh = st.columns([3, 1])
             with col_gen:
                 if st.button("🚀 라인업 다시 생성 (알고리즘 실행)", type="primary", use_container_width=True):
