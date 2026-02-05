@@ -2713,6 +2713,31 @@ with tab7:
                     ed_wait = pd.DataFrame() # 빈 데이터프레임 처리
 
                 st.divider()
+
+                with st.expander("💬 운동 안내 문자 생성 (클릭)", expanded=False):
+                if current_game:
+                    # 1. 날짜 자동 변환 로직 (2026-01-29 -> 1월 29일)
+                    game_date_raw = current_game.get('일시', '')
+                    formatted_date = game_date_raw # 기본값 (실패 시 원본 사용)
+                    
+                    try:
+                        # 날짜 형식(YYYY-MM-DD) 파싱 시도
+                        date_part = game_date_raw.split(' ')[0] # 날짜만 분리
+                        dt_obj = datetime.strptime(date_part, "%Y-%m-%d")
+                        formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
+                    except:
+                        # 형식이 다르면 그냥 그대로 출력
+                        pass
+
+                    # 2. 텍스트 포맷 생성 (요청하신 양식)
+                    notice_text = f"[여순광배구]\n"
+                    notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
+                    notice_text += "라인업 확인 바랍니다."
+                    
+                    # 3. 화면 표시
+                    st.code(notice_text, language="text")
+                else:
+                    st.warning("진행 중인 게임 정보가 없습니다.")
                 
                 # 일반 button 대신 form_submit_button 사용
                 submitted = st.form_submit_button("💾 일괄 저장하기", type="primary")
