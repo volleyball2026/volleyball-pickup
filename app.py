@@ -2715,19 +2715,33 @@ with tab7:
                 st.divider()
 
                 with st.expander("💬 운동 안내 문자 생성 (클릭)", expanded=False):
-                if current_game:
-                    # 1. 날짜 자동 변환 로직 (2026-01-29 -> 1월 29일)
-                    game_date_raw = current_game.get('일시', '')
-                    formatted_date = game_date_raw # 기본값 (실패 시 원본 사용)
-                    
-                    try:
-                        # 날짜 형식(YYYY-MM-DD) 파싱 시도
-                        date_part = game_date_raw.split(' ')[0] # 날짜만 분리
-                        dt_obj = datetime.strptime(date_part, "%Y-%m-%d")
+            if current_game:
+                # 1. 날짜 자동 변환 로직 (2026-01-29 -> 1월 29일)
+                # 입력된 날짜 형식에 맞춰 유연하게 처리합니다.
+                game_date_raw = str(current_game.get('일시', ''))
+                formatted_date = game_date_raw # 기본값 (변환 실패 시 원본 사용)
+                
+                try:
+                    # 날짜 부분(YYYY-MM-DD)만 추출해서 변환 시도
+                    # 공백이나 요일이 섞여있을 경우를 대비해 앞부분 10자리만 파싱 시도
+                    match = re.search(r'\d{4}-\d{2}-\d{2}', game_date_raw)
+                    if match:
+                        date_str = match.group()
+                        dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
                         formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
-                    except:
-                        # 형식이 다르면 그냥 그대로 출력
-                        pass
+                except:
+                    pass # 변환 실패하면 그냥 원본 문자열 사용
+
+                # 2. 텍스트 포맷 생성 (요청하신 심플 버전)
+                # 제목이나 기타 정보 없이 딱 필요한 내용만 출력
+                notice_text = f"[여순광배구]\n"
+                notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
+                notice_text += "라인업 확인 바랍니다."
+                
+                # 3. 화면 표시 (복사 버튼 포함)
+                st.code(notice_text, language="text")
+            else:
+                st.warning("진행 중인 게임 정보가 없습니다.")
 
                     # 2. 텍스트 포맷 생성 (요청하신 양식)
                     notice_text = f"[여순광배구]\n"
