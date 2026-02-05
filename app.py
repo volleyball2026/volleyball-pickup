@@ -2669,8 +2669,8 @@ with tab7:
 
         st.divider()
 
-        # =========================================================
-        # 섹션 3: 참가자 관리 (배치 저장 적용 ✨)
+       # =========================================================
+        # 섹션 3: 참가자 관리 (수정완료: 폼과 기능 분리)
         # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
@@ -2680,20 +2680,19 @@ with tab7:
             if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
             df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper()=='O' else False)
             
-            # 명단 분리 (인덱스 유지)
+            # 명단 분리
             df_manage = df_manage.reset_index(drop=True)
             mask = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]"))
             df_confirmed = df_manage[mask]
             df_waiting = df_manage[~mask]
 
             # -------------------------------------------------------------
-            # [핵심] st.form으로 감싸서 체크박스를 눌러도 바로 새로고침 되지 않게 함
+            # [기능 1] 입금 확인 및 일괄 저장 (st.form 사용)
             # -------------------------------------------------------------
             with st.form("deposit_check_form"):
-                st.caption("💡 체크박스를 여러 개 누르고, 맨 아래 [일괄 저장] 버튼을 누르면 한 번에 반영됩니다.")
+                st.caption("💡 체크박스를 누르고, 맨 아래 [일괄 저장] 버튼을 눌러야 반영됩니다.")
                 
                 st.success(f"📌 **확정 ({len(df_confirmed)}명)**")
-                # num_rows="fixed"로 설정하여 행 추가/삭제 막음 (안정성)
                 ed_conf = st.data_editor(
                     df_confirmed[["이름","연락처","입금_bool","1순위","비고"]], 
                     hide_index=True, 
@@ -2710,58 +2709,18 @@ with tab7:
                         use_container_width=True
                     )
                 else:
-                    ed_wait = pd.DataFrame() # 빈 데이터프레임 처리
+                    ed_wait = pd.DataFrame()
 
                 st.divider()
-
-                with st.expander("💬 운동 안내 문자 생성 (클릭)", expanded=False):
-            if current_game:
-                # 1. 날짜 자동 변환 로직 (2026-01-29 -> 1월 29일)
-                # 입력된 날짜 형식에 맞춰 유연하게 처리합니다.
-                game_date_raw = str(current_game.get('일시', ''))
-                formatted_date = game_date_raw # 기본값 (변환 실패 시 원본 사용)
                 
-                try:
-                    # 날짜 부분(YYYY-MM-DD)만 추출해서 변환 시도
-                    # 공백이나 요일이 섞여있을 경우를 대비해 앞부분 10자리만 파싱 시도
-                    match = re.search(r'\d{4}-\d{2}-\d{2}', game_date_raw)
-                    if match:
-                        date_str = match.group()
-                        dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
-                        formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
-                except:
-                    pass # 변환 실패하면 그냥 원본 문자열 사용
-
-                # 2. 텍스트 포맷 생성 (요청하신 심플 버전)
-                # 제목이나 기타 정보 없이 딱 필요한 내용만 출력
-                notice_text = f"[여순광배구]\n"
-                notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
-                notice_text += "라인업 확인 바랍니다."
-                
-                # 3. 화면 표시 (복사 버튼 포함)
-                st.code(notice_text, language="text")
-            else:
-                st.warning("진행 중인 게임 정보가 없습니다.")
-
-                    # 2. 텍스트 포맷 생성 (요청하신 양식)
-                    notice_text = f"[여순광배구]\n"
-                    notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
-                    notice_text += "라인업 확인 바랍니다."
-                    
-                    # 3. 화면 표시
-                    st.code(notice_text, language="text")
-                else:
-                    st.warning("진행 중인 게임 정보가 없습니다.")
-                
-                # 일반 button 대신 form_submit_button 사용
+                # 저장 버튼 (폼 안에 있어야 함)
                 submitted = st.form_submit_button("💾 일괄 저장하기", type="primary")
                 
                 if submitted:
                     # 1. 확정 명단 업데이트
                     for i, r in ed_conf.iterrows(): 
-                        # 원본 데이터프레임(df_manage)의 해당 인덱스(r.name) 업데이트
                         df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
-                        df_manage.loc[r.name, '비고'] = r['비고'] # 비고 수정도 반영
+                        df_manage.loc[r.name, '비고'] = r['비고']
                     
                     # 2. 대기 명단 업데이트
                     if not df_waiting.empty and not ed_wait.empty:
@@ -2769,16 +2728,43 @@ with tab7:
                             df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
                             df_manage.loc[r.name, '비고'] = r['비고']
                     
-                    # 3. 최종 변환 및 저장
+                    # 3. 최종 저장
                     df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
                     update_lineup(df_manage)
                     
-                    st.success("✅ 모든 변경사항이 저장되었습니다!")
+                    st.success("✅ 저장되었습니다!")
                     time.sleep(0.5)
-                    st.rerun() # 저장 후 딱 한 번만 새로고침
+                    st.rerun()
+
+            # -------------------------------------------------------------
+            # [기능 2] 운동 안내 문자 생성 (폼 바깥에 배치해야 함!)
+            # -------------------------------------------------------------
+            st.divider()
+            
+            with st.expander("💬 운동 안내 문자 생성 (클릭)", expanded=False):
+                if current_game:
+                    game_date_raw = str(current_game.get('일시', ''))
+                    formatted_date = game_date_raw 
+                    
+                    try:
+                        # 날짜 자동 변환 (2026-01-29 -> 1월 29일)
+                        match = re.search(r'\d{4}-\d{2}-\d{2}', game_date_raw)
+                        if match:
+                            dt_obj = datetime.strptime(match.group(), "%Y-%m-%d")
+                            formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
+                    except: pass
+
+                    # 텍스트 생성
+                    notice_text = f"[여순광배구]\n"
+                    notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
+                    notice_text += "라인업 확인 바랍니다."
+                    
+                    st.code(notice_text, language="text")
+                else:
+                    st.warning("진행 중인 게임 정보가 없습니다.")
+
         else: 
             st.info("신청자 없음")
-        st.divider()
         
         # =========================================================
         # 섹션 4: 게임 관리 (상세 폼 복구 완료 ✨)
