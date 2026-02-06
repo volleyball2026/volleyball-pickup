@@ -1545,16 +1545,26 @@ with tab1:
 
             st.markdown("---")
 
-            # 3. 포지션 선택 (개선됨: 2,3순위 강조 안내)
-            st.info("💡 **잠깐!** 1순위 경쟁에서 밀리면 갈 곳이 없어 **'대기'**가 될 수 있습니다.\n**2순위, 3순위까지 꽉 채워주셔야** 경기 참여 확률이 올라갑니다!")
+            # 3. 포지션 선택 (수정됨: 점수 혜택 및 배정 원리 강조)
+            st.markdown("---")
+            st.write("**🛡️ 포지션 희망 (점수 혜택)**")
+            
+            st.info("""
+            💡 **배정 꿀팁**: 1순위 경쟁에서 밀리면 **원하지 않는 포지션**으로 임의 배정될 수 있습니다.
+            **2순위**와 **3순위(수비/속공)**까지 꽉 채워주셔야 **희망 포지션 배정 확률**이 높아지고, **알고리즘 가산점(+점수)**도 챙길 수 있습니다!
+            """)
             
             lc1, lc2 = st.columns(2)
             with lc1: level = st.selectbox("참가자 레벨", LEVELS)
             
             p1, p2, p3 = st.columns(3)
-            with p1: pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
-            with p2: pos2 = st.selectbox("2순위 (필수 권장)", ["선택 안함"] + POSITIONS_ALL) # 라벨 강조
-            with p3: pos3 = st.selectbox("3순위 (보험)", ["선택 안함"] + POSITIONS_3RD) # 라벨 강조
+            with p1: 
+                pos1 = st.selectbox("1순위 (필수)", POSITIONS_ALL)
+            with p2: 
+                pos2 = st.selectbox("2순위 (차선책)", ["선택 안함"] + POSITIONS_ALL)
+            with p3: 
+                # 3순위는 수비/속공 위주임을 명시
+                pos3 = st.selectbox("3순위 (가산점+)", ["선택 안함"] + POSITIONS_3RD)
             
             st.caption("※ 부상 등으로 **'절대 불가능한'** 포지션이 있다면 아래에서 제외하세요.")
             excluded_pos = st.multiselect("제외할 포지션 (선택)", POSITIONS_ALL, max_selections=2)
