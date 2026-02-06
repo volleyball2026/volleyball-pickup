@@ -1489,7 +1489,10 @@ with tab1:
             elif is_full: st.warning(f"**🚫 정원 도달:** {current_count}/{MAX_CAPACITY}명")
             else: st.info(f"**⏰ 마감:** {deadline_str} 까지")
 
+        # [복구된 기능] 모집 현황 텍스트 표시
+        st.markdown(f"**👥 모집 현황 ({current_count} / {MAX_CAPACITY}명)**")
         st.progress(min(current_count / MAX_CAPACITY, 1.0))
+        
         if is_full: st.warning(f"📢 **정원 초과!** 지금 신청 시 **'대기자'**로 접수됩니다. (VEGA 회원은 확정)")
 
         st.divider()
