@@ -170,44 +170,85 @@ if 'mvp_voter_verified' not in st.session_state: st.session_state['mvp_voter_ver
 if 'mvp_voter_name' not in st.session_state: st.session_state['mvp_voter_name'] = ""
 if 'mvp_voter_phone' not in st.session_state: st.session_state['mvp_voter_phone'] = ""
 
-# --- [구글 시트 연결 최적화] ---
+# ==========================================
+# [최적화] 구글 시트 연결 및 캐싱 설정
+# ==========================================
+
+# 1. 연결 객체는 'cache_resource'로 딱 한 번만 생성하고 계속 재사용
 @st.cache_resource
 def get_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
+        # Streamlit Cloud 배포 환경
         if "gcp_service_account" in st.secrets:
             key_dict = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+        # 로컬 개발 환경
         else:
+            # 본인의 키 파일 경로로 수정 필요
             creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
+        
         client = gspread.authorize(creds)
         return client
     except Exception as e:
+        st.error(f"구글 시트 연결 실패: {e}")
         return None
 
-# [NEW] 문서를 여는 작업도 캐싱하여 속도 2배 향상
+# 2. 시트(문서)를 여는 작업도 자원을 많이 먹으므로 캐싱
 @st.cache_resource
 def get_doc_object():
     client = get_connection()
     if client:
         try:
             return client.open(DOC_NAME)
-        except:
+        except Exception as e:
             return None
     return None
 
+# 3. 워크시트 가져오기 (에러 시 자동 재시도 로직 추가)
 def get_sheet_instance(sheet_name):
-    # 매번 open하지 않고 캐시된 문서 객체 사용
     doc = get_doc_object()
     if doc:
         try:
             return doc.worksheet(sheet_name)
         except gspread.WorksheetNotFound:
-            # 시트가 없으면 생성 (이 작업은 가끔 일어나므로 캐싱 안 함)
-            return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
-        except Exception as e:
-            return None
+            try:
+                return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
+            except: return None
+        except Exception:
+            # 연결이 끊겼을 때 1번 재시도
+            st.cache_resource.clear() # 캐시 비우고
+            time.sleep(1) # 1초 쉬고
+            return get_sheet_instance(sheet_name) # 재귀 호출
     return None
+
+# 4. [핵심] 데이터 읽기는 'cache_data'로 메모리에 저장 (TTL 설정)
+# ttl=10: 데이터를 불러온 뒤 10초 동안은 구글에 다시 안 물어보고 메모리에서 꺼내 씀 (속도UP, 에러DOWN)
+@st.cache_data(ttl=10)
+def load_applicants():
+    sheet = get_sheet_instance(SHEET_APPLICANTS)
+    if sheet:
+        try:
+            return sheet.get_all_records()
+        except:
+            return []
+    return []
+
+# 5. [핵심] 저장/수정 함수에는 캐시를 비우는 명령 추가
+# (데이터가 바뀌었으니, 10초 기다리지 말고 즉시 새로고침 하라는 뜻)
+def add_applicant(name, phone, level, pos1, pos2, pos3, note, excluded_str):
+    sheet = get_sheet_instance(SHEET_APPLICANTS)
+    if sheet:
+        row_data = [
+            name, normalize_phone(phone), level, pos1, pos2, pos3, 
+            "", "", "", "", 
+            "", "", "", "", 
+            anonymize_name(name), "X", note, excluded_str, "O"
+        ]
+        sheet.append_row(row_data)
+        st.cache_data.clear() # <--- 중요! 데이터 변경 시 캐시 초기화
+
+# --- [유틸리티] ---
 
 # [기능 함수 추가] 사용자 IP 주소 가져오기
 def get_client_ip():
@@ -223,21 +264,6 @@ def get_client_ip():
     except:
         pass
     return "unknown"
-
-def get_sheet_instance(sheet_name):
-    client = get_connection()
-    if client:
-        try:
-            doc = client.open(DOC_NAME)
-            try:
-                return doc.worksheet(sheet_name)
-            except:
-                return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
-        except:
-            return None
-    return None
-
-# --- [유틸리티] ---
 
 # [기능 함수] 접속 로그 저장 함수 (시간차 제한으로 새로고침 중복 방지)
 def log_visit(action_type, user_info="익명"):
