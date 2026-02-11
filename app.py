@@ -441,15 +441,15 @@ def load_applicants():
     if sheet: return sheet.get_all_records()
     return []
 
+# [수정] 신규 신청 시 기본값 설정
 def add_applicant(name, phone, level, pos1, pos2, pos3, note, excluded_str):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
-        # [수정] 팀1~4, 확정1~4 (총 8개 빈칸)으로 확장
         row_data = [
             name, normalize_phone(phone), level, pos1, pos2, pos3, 
-            "", "", "", "", # 팀1, 팀2, 팀3, 팀4
-            "", "", "", "", # 확정1, 확정2, 확정3, 확정4
-            anonymize_name(name), "X", note, excluded_str
+            "", "", "", "", 
+            "", "", "", "", 
+            anonymize_name(name), "X", note, excluded_str, "O" # 맨 끝에 'O' (참가함) 추가
         ]
         sheet.append_row(row_data)
         st.cache_data.clear()
@@ -469,24 +469,24 @@ def cancel_applicant(name, phone):
             return False, "정보가 일치하지 않습니다."
         except: return False, "오류 발생"
 
+# [수정] 명단 업데이트 (참가여부 컬럼 추가)
 def update_lineup(df):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # [수정] 헤더에 팀4, 확정4 추가
+        # 헤더에 '참가여부' 추가 (맨 끝)
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "팀4", 
             "확정1", "확정2", "확정3", "확정4", 
-            "이름(가림)", "입금", "비고", "제외"
+            "이름(가림)", "입금", "비고", "제외", "참가여부"
         ]
         sheet.append_row(headers)
         
-        if '이름(가림)' not in df.columns: df['이름(가림)'] = df['이름'].apply(anonymize_name)
-        if '입금' not in df.columns: df['입금'] = 'X'
-        if '비고' not in df.columns: df['비고'] = ''
-        if '제외' not in df.columns: df['제외'] = ''
-            
+        # 데이터프레임에 컬럼이 없으면 기본값 'O' (참가)로 채움
+        if '참가여부' not in df.columns: df['참가여부'] = 'O'
+        
+        # 저장할 컬럼 순서 맞추기
         final_cols = headers
         for col in final_cols:
             if col not in df.columns: df[col] = ""
@@ -494,16 +494,16 @@ def update_lineup(df):
         sheet.append_rows(df[final_cols].values.tolist())
         st.cache_data.clear()
 
+# [수정] 초기화 시 헤더 맞추기
 def clear_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         sheet.clear()
-        # [수정] 헤더에 팀4, 확정4 추가
         headers = [
             "이름", "연락처", "레벨", "1순위", "2순위", "3순위", 
             "팀1", "팀2", "팀3", "팀4", 
             "확정1", "확정2", "확정3", "확정4", 
-            "이름(가림)", "입금", "비고", "제외"
+            "이름(가림)", "입금", "비고", "제외", "참가여부"
         ]
         sheet.append_row(headers)
         st.cache_data.clear()
@@ -1188,19 +1188,27 @@ def assign_positions_in_team(team_members):
 # --- [알고리즘 수정] 예비 인원 제외 필터링 적용 ---
 # --- [알고리즘 수정] 전체 수정 코드 (B팀 희소 포지션 보호 + 잉여 자원 차출) ---
 def generate_vega_priority_schedule(df):
-    # 1. 전체 명단을 가져오되, '확정 인원'만 추려냅니다.
+    # 1. 전체 데이터에서 '불참(X)' 인원 필터링
+    # (참가여부 컬럼이 없으면 기본적으로 모두 참가(O)로 간주)
+    if '참가여부' not in df.columns: df['참가여부'] = 'O'
+    
     raw_data = df.to_dict('records')
+    
+    # [핵심 로직] 불참자는 아예 후보군에서 제외 (없는 사람 취급)
+    valid_candidates = [p for p in raw_data if str(p.get('참가여부', 'O')).upper().strip() != 'X']
+    
     base_players = []
     
-    for idx, p in enumerate(raw_data):
-        # [확정 조건]
-        # 1. 선착순 정원(MAX_CAPACITY) 안에 들었거나
-        # 2. 이름에 [VEGA]가 포함된 경우 (프리패스)
+    # 2. 유효 후보군(valid_candidates) 내에서 정원 체크
+    # (이렇게 하면 앞사람이 빠지면 뒷사람이 자동으로 정원 내로 들어옴)
+    for idx, p in enumerate(valid_candidates):
         is_vega = "[VEGA]" in str(p.get('이름', ''))
+        
+        # 선착순 정원 내 or 베가 회원이면 확정
         if idx < MAX_CAPACITY or is_vega:
             base_players.append(p)
         else:
-            # 예비 인원은 라인업 생성에서 제외
+            # 정원 초과된 픽업 회원은 제외 (대기)
             continue
             
     # 제외 포지션 파싱
@@ -2575,43 +2583,60 @@ with tab7:
 
         st.divider()
 
-      # =========================================================
-        # 섹션 3: 참가자 관리 (3종 문자 생성기 추가됨 ✨)
+        # =========================================================
+        # 섹션 3: 참가자 관리 (참가/불참 관리 기능 추가됨 ✨)
         # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
         
         if apps:
             df_manage = pd.DataFrame(apps)
-            if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
-            df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper()=='O' else False)
             
-            # 명단 분리
-            df_manage = df_manage.reset_index(drop=True)
-            mask = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]"))
-            df_confirmed = df_manage[mask]
-            df_waiting = df_manage[~mask]
+            # 컬럼 보정 (없으면 기본값 생성)
+            if '입금' not in df_manage.columns: df_manage['입금'] = 'X'
+            if '참가여부' not in df_manage.columns: df_manage['참가여부'] = 'O'
+            
+            # Boolean 변환 (체크박스용)
+            df_manage['입금_bool'] = df_manage['입금'].apply(lambda x: True if str(x).upper()=='O' else False)
+            df_manage['참가_bool'] = df_manage['참가여부'].apply(lambda x: False if str(x).upper()=='X' else True) # 기본 True(참가)
+            
+            # 명단 분리 (인덱스 유지를 위해 reset_index 안 함)
+            # 불참자는 아예 별도로 표시하거나 맨 뒤로 보낼 수도 있지만, 여기서는 같이 보고 체크 해제하도록 함
+            
+            # 관리 편의를 위해: 참가자(O)와 불참자(X)를 시각적으로 구분
+            # 정원 내/외 구분
+            mask_capa = (df_manage.index < MAX_CAPACITY) | (df_manage['이름'].astype(str).str.contains(r"\[VEGA\]"))
+            df_confirmed = df_manage[mask_capa]
+            df_waiting = df_manage[~mask_capa]
 
-            # -------------------------------------------------------------
-            # [기능 1] 입금 확인 및 일괄 저장
-            # -------------------------------------------------------------
             with st.form("deposit_check_form"):
-                st.caption("💡 체크박스를 누르고, 맨 아래 [일괄 저장] 버튼을 눌러야 반영됩니다.")
+                st.caption("💡 **참가**: 체크 해제하면 라인업에서 제외됩니다. (대기자가 자동으로 올라옵니다)")
+                st.caption("💡 **입금**: 입금 확인 시 체크하세요.")
                 
-                st.success(f"📌 **확정 ({len(df_confirmed)}명)**")
+                # 컬럼 설정 (참가 체크박스 추가)
+                col_config = {
+                    "참가_bool": st.column_config.CheckboxColumn("참가", help="체크 해제 시 불참/제외 처리", default=True),
+                    "입금_bool": st.column_config.CheckboxColumn("입금", help="입금 확인", default=False),
+                    "이름": st.column_config.TextColumn("이름", disabled=True),
+                    "1순위": st.column_config.TextColumn("1순위", disabled=True),
+                }
+                
+                st.success(f"📌 **확정 대상 ({len(df_confirmed)}명)**")
                 ed_conf = st.data_editor(
-                    df_confirmed[["이름","연락처","입금_bool","1순위","비고"]], 
+                    df_confirmed[["참가_bool", "이름", "연락처", "입금_bool", "1순위", "비고"]], 
                     hide_index=True, 
                     key="ed_conf",
+                    column_config=col_config,
                     use_container_width=True
                 )
                 
                 if not df_waiting.empty:
-                    st.warning(f"⏳ **대기 ({len(df_waiting)}명)**")
+                    st.warning(f"⏳ **대기 대상 ({len(df_waiting)}명)**")
                     ed_wait = st.data_editor(
-                        df_waiting[["이름","연락처","입금_bool","1순위","비고"]], 
+                        df_waiting[["참가_bool", "이름", "연락처", "입금_bool", "1순위", "비고"]], 
                         hide_index=True, 
                         key="ed_wait",
+                        column_config=col_config,
                         use_container_width=True
                     )
                 else:
@@ -2619,28 +2644,34 @@ with tab7:
 
                 st.divider()
                 
-                # 저장 버튼
                 submitted = st.form_submit_button("💾 일괄 저장하기", type="primary")
                 
                 if submitted:
                     # 1. 확정 명단 업데이트
                     for i, r in ed_conf.iterrows(): 
                         df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
+                        df_manage.loc[r.name, '참가_bool'] = r['참가_bool']
                         df_manage.loc[r.name, '비고'] = r['비고']
                     
                     # 2. 대기 명단 업데이트
                     if not df_waiting.empty and not ed_wait.empty:
                         for i, r in ed_wait.iterrows(): 
                             df_manage.loc[r.name, '입금_bool'] = r['입금_bool']
+                            df_manage.loc[r.name, '참가_bool'] = r['참가_bool']
                             df_manage.loc[r.name, '비고'] = r['비고']
                     
-                    # 3. 최종 저장
+                    # 3. 최종 변환 및 저장
                     df_manage['입금'] = df_manage['입금_bool'].apply(lambda x: 'O' if x else 'X')
+                    df_manage['참가여부'] = df_manage['참가_bool'].apply(lambda x: 'O' if x else 'X')
+                    
                     update_lineup(df_manage)
                     
-                    st.success("✅ 저장되었습니다!")
+                    st.success("✅ 저장되었습니다! (불참자는 라인업 생성 시 자동 제외됩니다)")
                     time.sleep(0.5)
                     st.rerun()
+
+            # (안내 문자 생성기는 이 아래에 그대로 두시면 됩니다)
+            # ...
 
             # -------------------------------------------------------------
             # [기능 2] 스마트 문자 생성기 (3종 세트)
