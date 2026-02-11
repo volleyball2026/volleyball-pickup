@@ -2576,7 +2576,7 @@ with tab7:
         st.divider()
 
       # =========================================================
-        # 섹션 3: 참가자 관리 (수정완료: 폼과 기능 분리)
+        # 섹션 3: 참가자 관리 (3종 문자 생성기 추가됨 ✨)
         # =========================================================
         st.subheader("✅ 참가자 확정 및 입금 관리")
         apps = load_applicants()
@@ -2593,7 +2593,7 @@ with tab7:
             df_waiting = df_manage[~mask]
 
             # -------------------------------------------------------------
-            # [기능 1] 입금 확인 및 일괄 저장 (st.form 사용)
+            # [기능 1] 입금 확인 및 일괄 저장
             # -------------------------------------------------------------
             with st.form("deposit_check_form"):
                 st.caption("💡 체크박스를 누르고, 맨 아래 [일괄 저장] 버튼을 눌러야 반영됩니다.")
@@ -2619,7 +2619,7 @@ with tab7:
 
                 st.divider()
                 
-                # 저장 버튼 (폼 안에 있어야 함)
+                # 저장 버튼
                 submitted = st.form_submit_button("💾 일괄 저장하기", type="primary")
                 
                 if submitted:
@@ -2643,31 +2643,61 @@ with tab7:
                     st.rerun()
 
             # -------------------------------------------------------------
-            # [기능 2] 운동 안내 문자 생성 (폼 바깥에 배치해야 함!)
+            # [기능 2] 스마트 문자 생성기 (3종 세트)
             # -------------------------------------------------------------
             st.divider()
+            st.markdown("### 💬 안내 문자 생성기")
             
-            with st.expander("💬 운동 안내 문자 생성 (클릭)", expanded=False):
-                if current_game:
-                    game_date_raw = str(current_game.get('일시', ''))
-                    formatted_date = game_date_raw 
-                    
-                    try:
-                        # 날짜 자동 변환 (2026-01-29 -> 1월 29일)
-                        match = re.search(r'\d{4}-\d{2}-\d{2}', game_date_raw)
-                        if match:
-                            dt_obj = datetime.strptime(match.group(), "%Y-%m-%d")
-                            formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
-                    except: pass
+            if current_game:
+                # 날짜 자동 변환 로직
+                game_date_raw = str(current_game.get('일시', ''))
+                formatted_date = game_date_raw 
+                try:
+                    match = re.search(r'\d{4}-\d{2}-\d{2}', game_date_raw)
+                    if match:
+                        dt_obj = datetime.strptime(match.group(), "%Y-%m-%d")
+                        formatted_date = f"{dt_obj.month}월 {dt_obj.day}일"
+                except: pass
+                
+                # 가로 3열 배치
+                mc1, mc2, mc3 = st.columns(3)
+                
+                # 1. 운동 안내 (기존)
+                with mc1:
+                    with st.expander("📢 운동 안내", expanded=False):
+                        msg1 = f"[여순광배구]\n"
+                        msg1 += f"금일({formatted_date}) 18:30 운동 예정.\n"
+                        msg1 += "라인업 확인 바랍니다.\n"
+                        msg1 += "https://volleyball-pickup.streamlit.app/"
+                        st.code(msg1, language="text")
 
-                    # 텍스트 생성
-                    notice_text = f"[여순광배구]\n"
-                    notice_text += f"금일({formatted_date}) 18:30 운동 예정.\n"
-                    notice_text += "라인업 확인 바랍니다."
-                    
-                    st.code(notice_text, language="text")
-                else:
-                    st.warning("진행 중인 게임 정보가 없습니다.")
+                # 2. 정원 초과 안내 (대기자용)
+                with mc2:
+                    with st.expander("🚫 정원 초과 안내", expanded=False):
+                        if not df_waiting.empty:
+                            wait_names = ", ".join(df_waiting['이름'].tolist())
+                            st.caption(f"대상: {wait_names}")
+                        else:
+                            st.caption("현재 대기자가 없습니다.")
+                            
+                        msg2 = f"[여순광배구]\n"
+                        msg2 += f"죄송합니다. 금일({formatted_date}) 정원 초과로 참여가 어렵습니다.\n"
+                        msg2 += "결원 발생 시 순서대로 연락드리겠습니다!\n"
+                        msg2 += "다음에 꼭 함께해요! 🏐"
+                        st.code(msg2, language="text")
+
+                # 3. MVP 투표 독려 (경기 후)
+                with mc3:
+                    with st.expander("🏆 MVP 투표 독려", expanded=False):
+                        msg3 = f"[여순광배구]\n"
+                        msg3 += f"오늘 운동 즐거우셨나요? 🏐\n"
+                        msg3 += "오늘의 MVP에게 투표해주세요!\n\n"
+                        msg3 += "👉 투표하러 가기:\n"
+                        msg3 += "https://volleyball-pickup.streamlit.app/"
+                        st.code(msg3, language="text")
+
+            else:
+                st.warning("진행 중인 게임 정보가 없습니다.")
 
         else: 
             st.info("신청자 없음")
