@@ -316,13 +316,20 @@ def normalize_phone(phone):
     elif len(phone) == 10: return f"{phone[:3]}-{phone[3:6]}-{phone[6:]}"
     return phone
 
+# 1. [교체] 이름 가리기 함수
 def anonymize_name(name):
     if not isinstance(name, str): return str(name)
     prefix = ""
     real_name = name
+    
+    # 여수블랙 태그 감지
     if name.startswith("[BLACK]"):
         prefix = "[BLACK] "
         real_name = name.replace("[BLACK] ", "").strip()
+    # (안전장치) 과거 VEGA 태그 감지
+    elif name.startswith("[VEGA]"):
+        prefix = "[VEGA] "
+        real_name = name.replace("[VEGA] ", "").strip()
     
     if len(real_name) <= 1: masked = real_name
     elif len(real_name) == 2: masked = real_name[0] + "O"
@@ -743,64 +750,38 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
-# --- [UI 함수] 신청자 목록 카드 디자인 (포지션 약어 명확화: 백 포지션 2글자) ---
+# 2. [교체] 참가 신청자 목록 카드 UI 함수
 def render_applicant_list_html(df):
     if df.empty:
         return "<div style='text-align:center; padding:20px; color:#999;'>아직 신청자가 없습니다.</div>"
     
-    # [수정] 헷갈리는 포지션은 2글자로 명확히 구분
     POS_ABBR = {
-        # 공격/메인 (1글자)
-        "레프트": "레", 
-        "라이트": "라", 
-        "세터": "세", 
-        "속공": "속",
-        "앞차": "앞", 
-        "백차": "백",
-        
-        # 수비/백 포지션 (2글자 - 여기서 구분!)
-        "레프트백": "레백", 
-        "라이트백": "라백", 
-        "센터백": "센백",
-        
-        # 예외 처리
+        "레프트": "레", "라이트": "라", "세터": "세", "속공": "속",
+        "앞차": "앞", "백차": "백", "레프트백": "레백", "라이트백": "라백", "센터백": "센백",
         "선택 안함": "-", "": "-", "nan": "-"
     }
 
-    # 2열 그리드
     html_code = "<div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>"
     
     for _, row in df.iterrows():
-        # 데이터 추출
         name = row['이름']
         level = row.get('레벨', '입문')
         
-        # 1, 2, 3순위 가져오기
         p1 = str(row.get('1순위', '-')).strip()
         p2 = str(row.get('2순위', '-')).strip()
         p3 = str(row.get('3순위', '-')).strip()
         
-        # [핵심] 포지션 체인 생성 (예: 세-레-센백)
-        # 1. 1순위 약어 변환
-        abbr1 = POS_ABBR.get(p1, p1[:1]) # 사전에 없으면 앞 1글자만
+        abbr1 = POS_ABBR.get(p1, p1[:1])
         chain_str = abbr1
-        
-        # 2. 2순위 연결
-        if p2 and p2 not in ["선택 안함", "-", "nan", ""]:
-            abbr2 = POS_ABBR.get(p2, p2[:1])
-            chain_str += f"-{abbr2}"
-            
-            # 3. 3순위 연결 (2순위가 있을 때만 체크)
-            if p3 and p3 not in ["선택 안함", "-", "nan", ""]:
-                abbr3 = POS_ABBR.get(p3, p3[:1])
-                chain_str += f"-{abbr3}"
+        if p2 and p2 not in ["선택 안함", "-", "nan", ""]: chain_str += f"-{POS_ABBR.get(p2, p2[:1])}"
+        if p3 and p3 not in ["선택 안함", "-", "nan", ""]: chain_str += f"-{POS_ABBR.get(p3, p3[:1])}"
 
         note = str(row.get('비고', ''))
         status_bool = str(row.get('입금', '')).upper() == 'O'
         
-        # 스타일 결정
-        is_BLACK = "[BLACK]" in name
-        display_name = name.replace("[BLACK]", "").strip()
+        # [핵심 버그 수정] 정확히 "[BLACK]"이 포함될 때만 True가 되도록 고정!
+        is_black = "[BLACK]" in name
+        display_name = name.replace("[BLACK]", "").replace("[VEGA]", "").strip()
         
         if status_bool:
             status_icon = "✅"
@@ -813,8 +794,8 @@ def render_applicant_list_html(df):
             border_color = "#EEEEEE"
             opacity = "0.7"
             
-        # 뱃지
         top_badges = ""
+        # 블랙 회원 전용 뱃지
         if is_black:
             top_badges += "<span style='background:#1565C0; color:white; font-size:0.6rem; padding:2px 5px; border-radius:10px; margin-right:2px;'>BLACK</span>"
         if "예비" in note:
@@ -822,74 +803,41 @@ def render_applicant_list_html(df):
         elif "지각" in note:
             top_badges += "<span style='background:#FFEBEE; color:#D32F2F; font-size:0.6rem; padding:2px 5px; border-radius:10px;'>지각</span>"
 
-        # 카드 HTML
         card = (
-            f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; "
-            f"padding: 12px 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; opacity: {opacity}; position: relative;'>"
-            
-            # 상태 아이콘
+            f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 15px; padding: 12px 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; opacity: {opacity}; position: relative;'>"
             f"  <div style='position: absolute; top: 8px; right: 8px; font-size: 0.8em;'>{status_icon}</div>"
-            
-            # 포지션 아이콘 (1순위 약어 크게)
             f"  <div style='display: flex; justify-content: center; margin-bottom: 6px;'>"
-            f"    <div style='width: 35px; height: 35px; border-radius: 50%; background-color: #f0f2f6; "
-            f"    color: #444; display: flex; align-items: center; justify-content: center; "
-            f"    font-weight: 800; font-size: { '0.85em' if len(abbr1) > 1 else '1.0em' }; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
-            f"      {abbr1}"
-            f"    </div>"
+            f"    <div style='width: 35px; height: 35px; border-radius: 50%; background-color: #f0f2f6; color: #444; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: { '0.85em' if len(abbr1) > 1 else '1.0em' }; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>{abbr1}</div>"
             f"  </div>"
-            
-            # 뱃지
             f"  <div style='margin-bottom: 4px; min-height: 15px;'>{top_badges}</div>"
-            
-            # 이름
-            f"  <div style='font-size: 1.1em; font-weight: 800; color: #222; margin-bottom: 2px; letter-spacing: -0.5px;'>"
-            f"    {display_name}"
-            f"  </div>"
-            
-            # [결과] 레벨 · 포지션 체인 (예: 초급 · 세-레-센백)
-            f"  <div style='font-size: 0.75em; color: #666; letter-spacing: -0.5px; font-weight: 600;'>"
-            f"    {level} · <span style='color:#1565C0;'>{chain_str}</span>"
-            f"  </div>"
-            
+            f"  <div style='font-size: 1.1em; font-weight: 800; color: #222; margin-bottom: 2px; letter-spacing: -0.5px;'>{display_name}</div>"
+            f"  <div style='font-size: 0.75em; color: #666; letter-spacing: -0.5px; font-weight: 600;'>{level} · <span style='color:#1565C0;'>{chain_str}</span></div>"
             f"</div>"
         )
         html_code += card
-        
     html_code += "</div>"
     return html_code
     
-# [수정된 함수] 작전판 HTML 생성 (기존 디자인 유지 + 블라인드 모드 추가)
+# 3. [교체] 라인업 작전판 코트 UI 생성 함수
 def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None, is_black_blind=False):
-    # 1. 팀 색상 설정 (기존 코드 유지)
     if team_type == "A팀":
-        bg_color = "#FFEBEE" # 연한 빨강 배경
-        border_color = "#D32F2F" # 진한 빨강 테두리
+        bg_color = "#FFEBEE" 
+        border_color = "#D32F2F" 
         header_text = "🔴 A팀 (BLACK)"
     else:
-        bg_color = "#E3F2FD" # 연한 파랑 배경
-        border_color = "#1976D2" # 진한 파랑 테두리
+        bg_color = "#E3F2FD" 
+        border_color = "#1976D2" 
         header_text = "🔵 B팀 (픽업)"
 
-    # 포지션별 배치 정의 (기존 코드 유지)
-    row1 = ["레프트", "속공", "세터", "라이트"]
-    row2 = ["앞차", "백차"]
-    row3 = ["레프트백", "센터백", "라이트백"]
-
-    # 선수 데이터 매핑 (기존 코드 유지)
     player_map = {}
-    
     if not team_df.empty and col_pos in team_df.columns:
         players = team_df[team_df[col_pos] != "대기"]
-        
         for _, row in players.iterrows():
             pos = str(row.get(col_pos, '')).strip()
             name = row.get('이름_masked', row['이름'])
             real_name = row['이름']
             
-            # 점수 및 사유 가져오기
-            score = 0
-            reason = ""
+            score, reason = 0, ""
             if score_db and r_num:
                 if real_name in score_db.get(r_num, {}):
                     p_data = score_db[r_num][real_name]
@@ -899,7 +847,6 @@ def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None
                 score = row.get('priority_score', 0)
                 reason = row.get('score_reason', '')
             
-            # 순위 정보 확인 (뱃지용) - 기존 로직 유지
             w1 = str(row.get('1순위', '')).strip()
             w2 = str(row.get('2순위', '')).strip()
             w3 = str(row.get('3순위', '')).strip()
@@ -915,47 +862,34 @@ def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None
     def make_player_html(pos_name):
         p_data = player_map.get(pos_name)
         if p_data:
-            # --- [기존 변수들 준비] ---
             p_name = p_data['name']
             p_score = f"{p_data['score']:.2f}"
             p_reason = p_data['reason']
             p_rank = p_data['rank']
+            
+            # [핵심 버그 수정] 정확히 "[BLACK]" 텍스트가 있을 때만 True!
             is_black = "[BLACK]" in p_data['real_name']
 
-            # ============================================================
-            # [핵심 변경] 블라인드 모드 ON + 블랙 회원이면 -> 가리기
-            # ============================================================
             if is_black_blind and is_black:
-                # 1. 블라인드 스타일 적용
                 display_name = "🔒 BLACK"
-                rank_html = "" # 뱃지 숨김
-                black_badge = "" # 뱃지 숨김
-                p_score_txt = "포지션 협의" # 점수 대신 안내 문구
-                formatted_reason = "" # 사유 숨김
-                
-                # 빗금 패턴 배경 (블라인드 전용)
+                rank_html = "" 
+                team_badge = "" 
+                p_score_txt = "포지션 협의" 
+                formatted_reason = "" 
                 card_style = f"background: linear-gradient(135deg, #e0e0e0 25%, #f5f5f5 25%, #f5f5f5 50%, #e0e0e0 50%, #e0e0e0 75%, #f5f5f5 75%, #f5f5f5 100%); background-size: 10px 10px; border: 1px solid {border_color}; color: #555;"
-            
             else:
-                # 2. 기존 스타일 적용 (사용자님 코드 그대로!)
-                display_name = p_name.replace("[BLACK]", "").strip()
+                display_name = p_name.replace("[BLACK]", "").replace("[VEGA]", "").strip()
                 p_score_txt = p_score
                 
-                # BLACK 뱃지
-                black_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>V</span>" if is_black else ""
+                # 블랙 회원 파란색 뱃지 (올바른 대상에게만 적용됨)
+                team_badge = "<span style='background-color:#1565C0; color:white; padding:1px 3px; border-radius:3px; font-size:0.7em; margin-right:2px; vertical-align: middle; font-weight:normal;'>BLACK</span>" if is_black else ""
                 
-                # 순위 뱃지 (기존 코드 복구)
                 rank_html = ""
-                if p_rank == "1st":
-                    rank_html = "<span style='color:#1565C0; background-color:#E3F2FD; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>1순위</span>"
-                elif p_rank == "2nd":
-                    rank_html = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>2순위</span>"
-                elif p_rank == "3rd":
-                    rank_html = "<span style='color:#EF6C00; background-color:#FFF3E0; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>3순위</span>"
-                else:
-                    rank_html = "<span style='color:#C62828; background-color:#FFEBEE; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>무</span>"
+                if p_rank == "1st": rank_html = "<span style='color:#1565C0; background-color:#E3F2FD; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>1순위</span>"
+                elif p_rank == "2nd": rank_html = "<span style='color:#2E7D32; background-color:#E8F5E9; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>2순위</span>"
+                elif p_rank == "3rd": rank_html = "<span style='color:#EF6C00; background-color:#FFF3E0; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>3순위</span>"
+                else: rank_html = "<span style='color:#C62828; background-color:#FFEBEE; padding:0px 3px; border-radius:3px; font-size:0.7em; font-weight:normal; margin-left:3px;'>무</span>"
 
-                # 점수 내역 색상 (기존 코드 복구)
                 reason_items = p_reason.split()
                 formatted_reason = ""
                 for item in reason_items:
@@ -965,67 +899,31 @@ def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None
                     elif "기본" in item: color = "#9E9E9E"
                     formatted_reason += f"<span style='color:{color}; margin-right:2px;'>{item}</span>"
                 
-                # 일반 배경
                 card_style = f"background: white; border: 1px solid {border_color}; color: #000;"
 
-            # ============================================================
-            # [HTML 조립] (하나의 틀로 통합)
-            # ============================================================
             return (
-                f"<div style='{card_style} border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); "
-                f"display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
-                
-                # 포지션명 + 뱃지
-                f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px; white-space: nowrap;'>"
-                f"{pos_name}{rank_html}"
-                f"</div>"
-                
-                # 이름
-                f"<div style='font-size: 0.8em; font-weight: 800; margin-bottom: 1px; line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>"
-                f"{black_badge}{display_name}"
-                f"</div>"
-                
-                # 총점 (또는 블라인드 안내 문구)
+                f"<div style='{card_style} border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; box-shadow: 1px 1px 2px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
+                f"<div style='font-size: 0.55em; font-weight: bold; color: #888; margin-bottom: 1px; white-space: nowrap;'>{pos_name}{rank_html}</div>"
+                f"<div style='font-size: 0.8em; font-weight: 800; margin-bottom: 1px; line-height: 1.1; text-align: center; word-break: break-word; overflow-wrap: break-word;'>{team_badge}{display_name}</div>"
                 f"<div style='font-size: 0.7em; font-weight:bold; color: #333; border-bottom: 1px solid #eee; margin-bottom: 2px;'>{p_score_txt}</div>"
-                
-                # 상세 내역 (블라인드면 빈칸)
                 f"<div style='font-size: 0.5em; line-height: 1; text-align: center; word-break: break-all;'>{formatted_reason}</div>"
-                
                 f"</div>"
             )
         else:
-            # 빈 자리 (기존 코드 유지)
             return (
-                f"<div style='border: 1px dashed #ddd; border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; "
-                f"opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
-                f"<div style='font-size: 0.55em; color: #aaa;'>{pos_name}</div>"
-                f"<div style='font-size: 0.65em; color: #ccc;'>(공석)</div>"
+                f"<div style='border: 1px dashed #ddd; border-radius: 6px; padding: 4px 1px; margin: 1px; width: 24%; opacity: 0.6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 60px;'>"
+                f"<div style='font-size: 0.55em; color: #aaa;'>{pos_name}</div><div style='font-size: 0.65em; color: #ccc;'>(공석)</div>"
                 f"</div>"
             )
 
-    # 전체 보드 HTML 조립 (기존 코드 유지)
     board_html = (
         f"<div style='background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 10px; padding: 6px 2px; margin-bottom: 10px;'>"
         f"<div style='text-align: center; font-weight: bold; color: {border_color}; font-size: 0.85em; margin-bottom: 4px;'>{header_text}</div>"
-        
-        # Row 1
-        f"<div style='display: flex; justify-content: space-around; margin-bottom: 4px;'>"
-        f"{make_player_html('레프트')}{make_player_html('속공')}{make_player_html('세터')}{make_player_html('라이트')}"
-        f"</div>"
-        
-        # Row 2
-        f"<div style='display: flex; justify-content: center; gap: 15px; margin-bottom: 4px;'>"
-        f"{make_player_html('앞차')}{make_player_html('백차')}"
-        f"</div>"
-        
-        # Row 3
-        f"<div style='display: flex; justify-content: space-around;'>"
-        f"{make_player_html('레프트백')}{make_player_html('센터백')}{make_player_html('라이트백')}"
-        f"</div>"
-        
+        f"<div style='display: flex; justify-content: space-around; margin-bottom: 4px;'>{make_player_html('레프트')}{make_player_html('속공')}{make_player_html('세터')}{make_player_html('라이트')}</div>"
+        f"<div style='display: flex; justify-content: center; gap: 15px; margin-bottom: 4px;'>{make_player_html('앞차')}{make_player_html('백차')}</div>"
+        f"<div style='display: flex; justify-content: space-around;'>{make_player_html('레프트백')}{make_player_html('센터백')}{make_player_html('라이트백')}</div>"
         f"</div>"
     )
-    
     return board_html
 
 # --- [알고리즘] ---
