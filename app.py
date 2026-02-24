@@ -171,71 +171,78 @@ if 'mvp_voter_name' not in st.session_state: st.session_state['mvp_voter_name'] 
 if 'mvp_voter_phone' not in st.session_state: st.session_state['mvp_voter_phone'] = ""
 
 # ==========================================
-# [최적화] 구글 시트 연결 및 캐싱 설정
+# [최적화] 구글 시트 연결 및 자동 복구 로직 (완벽 수정본)
 # ==========================================
 
-# 1. 연결 객체는 'cache_resource'로 딱 한 번만 생성하고 계속 재사용
-@st.cache_resource
+# 1. 인증 객체는 1시간(3600초) 동안만 기억 (토큰 만료 방지)
+@st.cache_resource(ttl=3600)
 def get_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # Streamlit Cloud 배포 환경
         if "gcp_service_account" in st.secrets:
             key_dict = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
-        # 로컬 개발 환경
         else:
-            # 본인의 키 파일 경로로 수정 필요
             creds = ServiceAccountCredentials.from_json_keyfile_name(r"C:\Users\82106\service_account.json", scope)
         
         client = gspread.authorize(creds)
         return client
     except Exception as e:
-        st.error(f"구글 시트 연결 실패: {e}")
+        st.error(f"🔑 인증 오류 (JSON 파일 경로 또는 Secrets 확인): {e}")
         return None
 
-# 2. 시트(문서)를 여는 작업도 자원을 많이 먹으므로 캐싱
-@st.cache_resource
-def get_doc_object():
+# 2. 문서 열기 (에러를 캐싱하지 않고, 실패 시 스스로 재시도)
+def get_sheet_instance(sheet_name, retries=2):
     client = get_connection()
-    if client:
+    if not client:
+        return None
+        
+    for attempt in range(retries):
         try:
-            return client.open(DOC_NAME)
-        except Exception as e:
-            return None
-    return None
-
-# 3. 워크시트 가져오기 (에러 시 자동 재시도 로직 추가)
-def get_sheet_instance(sheet_name):
-    doc = get_doc_object()
-    if doc:
-        try:
+            doc = client.open(DOC_NAME)
             return doc.worksheet(sheet_name)
+            
+        except gspread.exceptions.APIError as e:
+            # 너무 많이 접속해서 구글이 차단했을 때
+            if "429" in str(e): 
+                time.sleep(2) # 2초 쉬었다가 다시 시도
+                if attempt == retries - 1:
+                    st.toast("⚠️ 접속량이 많습니다. 잠시 후 다시 시도해주세요.", icon="⏳")
+            else:
+                if attempt == retries - 1: st.error(f"구글 API 에러: {e}")
+                
+        except gspread.exceptions.SpreadsheetNotFound:
+            # 시트 이름이 다르거나 공유가 안 되어있을 때
+            st.error(f"❌ '{DOC_NAME}' 시트를 찾을 수 없습니다! 서비스 계정 이메일로 공유되었는지 확인하세요.")
+            return None
+            
         except gspread.WorksheetNotFound:
+            # 탭(워크시트)이 없을 때 새로 생성
             try:
+                doc = client.open(DOC_NAME)
                 return doc.add_worksheet(title=sheet_name, rows=100, cols=20)
-            except: return None
-        except Exception:
-            # 연결이 끊겼을 때 1번 재시도
-            st.cache_resource.clear() # 캐시 비우고
-            time.sleep(1) # 1초 쉬고
-            return get_sheet_instance(sheet_name) # 재귀 호출
+            except:
+                return None
+                
+        except Exception as e:
+            # 알 수 없는 통신 에러 시 인증 캐시를 강제로 비우고 재시도
+            st.cache_resource.clear()
+            time.sleep(1)
+            
     return None
 
-# 4. [핵심] 데이터 읽기는 'cache_data'로 메모리에 저장 (TTL 설정)
-# ttl=10: 데이터를 불러온 뒤 10초 동안은 구글에 다시 안 물어보고 메모리에서 꺼내 씀 (속도UP, 에러DOWN)
-@st.cache_data(ttl=10)
+# 3. 데이터 읽기 (15초 동안 메모리 캐싱하여 과부하 방지)
+@st.cache_data(ttl=15)
 def load_applicants():
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
         try:
             return sheet.get_all_records()
         except:
-            return []
+            pass
     return []
 
-# 5. [핵심] 저장/수정 함수에는 캐시를 비우는 명령 추가
-# (데이터가 바뀌었으니, 10초 기다리지 말고 즉시 새로고침 하라는 뜻)
+# 4. 데이터 쓰기 (저장할 때는 반드시 캐시를 초기화해서 바로 반영되게 함)
 def add_applicant(name, phone, level, pos1, pos2, pos3, note, excluded_str):
     sheet = get_sheet_instance(SHEET_APPLICANTS)
     if sheet:
@@ -246,7 +253,7 @@ def add_applicant(name, phone, level, pos1, pos2, pos3, note, excluded_str):
             anonymize_name(name), "X", note, excluded_str, "O"
         ]
         sheet.append_row(row_data)
-        st.cache_data.clear() # <--- 중요! 데이터 변경 시 캐시 초기화
+        st.cache_data.clear() # 핵심: 데이터 바뀌면 기억 지우기
 
 # --- [유틸리티] ---
 
