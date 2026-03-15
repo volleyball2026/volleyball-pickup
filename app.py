@@ -7,16 +7,16 @@ import copy
 from datetime import datetime, timedelta
 import re
 import time
-import altair as alt
 import plotly.graph_objects as go 
 import base64  
 import os
 from streamlit.web.server.websocket_headers import _get_websocket_headers
 
-# [설정] 페이지 설정은 반드시 import 바로 아래, 맨 처음에 와야 합니다!
+# ==========================================
+# [STEP 1] 기본 페이지 설정 및 환경 변수
+# ==========================================
 st.set_page_config(page_title="여순광 배구 픽업", page_icon="🏐", layout="wide") 
 
-# [UI] 모바일 최적화 CSS
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
@@ -32,16 +32,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- [기본 환경 설정] ---
 DOC_NAME = "배구픽업관리"
-SHEET_APPLICANTS = "참가자명단"
-SHEET_GAME_INFO = "게임정보"
-SHEET_HISTORY = "경기기록"
-SHEET_BLACKLIST = "블랙리스트"
-SHEET_MVP = "MVP투표"
-SHEET_SUGGESTION = "건의함"
-SHEET_VIDEOS = "영상관리"
-SHEET_LOGS = "접속로그"
+SHEET_APPLICANTS, SHEET_GAME_INFO, SHEET_HISTORY = "참가자명단", "게임정보", "경기기록"
+SHEET_BLACKLIST, SHEET_MVP, SHEET_SUGGESTION = "블랙리스트", "MVP투표", "건의함"
+SHEET_VIDEOS, SHEET_LOGS = "영상관리", "접속로그"
 ADMIN_PASSWORD = "1992"
 MAX_CAPACITY = 20
 
@@ -51,20 +45,19 @@ LEVELS = ["입문", "초급", "중급", "상급", "최상급"]
 POSITION_QUOTAS = {"세터": 1, "레프트": 1, "라이트": 1, "속공": 1, "앞차": 1, "백차": 1, "레프트백": 1, "센터백": 1, "라이트백": 1}
 LEVEL_MAP = {"입문": 1, "초급": 2, "중급": 3, "상급": 4, "최상급": 5}
 
-# --- [세션 상태 초기화] ---
 if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
 if 'mvp_voter_verified' not in st.session_state: st.session_state['mvp_voter_verified'] = False
 if 'mvp_voter_name' not in st.session_state: st.session_state['mvp_voter_name'] = ""
 if 'mvp_voter_phone' not in st.session_state: st.session_state['mvp_voter_phone'] = ""
 
 try:
-    query_params = st.query_params
-    if query_params.get("auth", "") == ADMIN_PASSWORD:
+    if st.query_params.get("auth", "") == ADMIN_PASSWORD:
         st.session_state['admin_logged_in'] = True
 except: pass
 
+
 # ==========================================
-# [최적화] 구글 시트 연결 및 자동 복구 로직
+# [STEP 2] 구글 시트 연결 및 데이터 함수
 # ==========================================
 @st.cache_resource(ttl=3600)
 def get_connection():
@@ -105,9 +98,6 @@ def get_sheet_instance(sheet_name, retries=2):
             time.sleep(1)
     return None
 
-# ==========================================
-# [유틸리티 & 공평 시스템 기반 함수]
-# ==========================================
 def get_client_ip():
     try:
         headers = _get_websocket_headers()
@@ -142,7 +132,6 @@ def normalize_phone(phone):
 
 def anonymize_name(name):
     if not isinstance(name, str): return str(name)
-    # 과거 타팀 태그 흔적이 있어도 깔끔하게 무시하고 이름만 추출
     real_name = name.replace("[BLACK] ", "").replace("[VEGA] ", "").replace("[BLACK]", "").replace("[VEGA]", "").strip()
     if len(real_name) <= 1: return real_name
     elif len(real_name) == 2: return real_name[0] + "O"
@@ -165,7 +154,6 @@ def format_score_html(score, reason):
         else: formatted_items.append(item)
     return f"<div style='background-color: #F8F9FA; border: 1px solid #E0E0E0; border-radius: 6px; padding: 4px 8px; margin-top: 4px; color: #333333; font-size: 0.85em; line-height: 1.4;'><span style='font-weight:bold; color:#333;'>└ {header}</span> | {' '.join(formatted_items)}</div>"
 
-# --- [데이터 관리 함수] ---
 @st.cache_data(ttl=60)
 def get_current_game_info():
     sheet = get_sheet_instance(SHEET_GAME_INFO)
@@ -303,7 +291,6 @@ def load_all_history():
     try: return sheet.get_all_records()
     except: return []
 
-# --- 영상/건의/MVP 등 부가 기능 ---
 def save_video_link(url, title):
     sheet = get_sheet_instance(SHEET_VIDEOS)
     if sheet:
@@ -422,7 +409,10 @@ def generate_kakao_text(df):
         text += "\n"
     return text
 
-# --- [UI] 시각화 생성 함수 (배지 제거, 공평 시스템) ---
+
+# ==========================================
+# [STEP 3] 공평 배정 시스템 핵심 알고리즘 및 UI
+# ==========================================
 def render_applicant_list_html(df):
     if df.empty: return "<div style='text-align:center; padding:20px; color:#999;'>아직 신청자가 없습니다.</div>"
     
@@ -522,7 +512,7 @@ def render_tactical_board(team_df, team_type, col_pos, score_db=None, r_num=None
     )
     return board_html
 
-# --- [공평 알고리즘] ---
+
 def get_priority_score(player, global_history, global_hardship):
     name = player['이름']
     score = 50.0 
@@ -655,11 +645,14 @@ def generate_priority_schedule(df):
             
         current_pool.sort(key=lambda x: x['priority_score'], reverse=True)
         
-        # 완전 공평한 스네이크 드래프트 분배 (1-A, 2-B, 3-B, 4-A)
+        # [수정] 12명 미만이면 단일팀(교류전) 구성, 아니면 스네이크 배정
         team_a, team_b = [], []
-        for i, p in enumerate(current_pool):
-            if (i % 4 == 0) or (i % 4 == 3): team_a.append(p)
-            else: team_b.append(p)
+        if len(current_pool) < 12:
+            team_a = current_pool[:]
+        else:
+            for i, p in enumerate(current_pool):
+                if (i % 4 == 0) or (i % 4 == 3): team_a.append(p)
+                else: team_b.append(p)
 
         team_a.sort(key=lambda x: x['priority_score'], reverse=True)
         team_b.sort(key=lambda x: x['priority_score'], reverse=True)
@@ -686,9 +679,12 @@ def generate_priority_schedule(df):
         
     return final_rounds
 
+
+# ==========================================
+# [STEP 4] 메인 UI 레이아웃 및 탭
+# ==========================================
 log_visit("메인접속", st.session_state.get('my_name', '익명'))
 
-# --- [사이드바] ---
 with st.sidebar:
     st.header("📢 Update Log")
     st.info("정식 출범! 100% 공평 배정 시스템 가동 시작")
@@ -699,7 +695,6 @@ with st.sidebar:
     if get_sheet_instance(SHEET_APPLICANTS): st.success("✅ 서버 연결됨")
     else: st.error("❌ 서버 연결 실패")
 
-# --- [메인 헤더] ---
 img_file = "mikasa.png" 
 if os.path.exists(img_file):
     with open(img_file, "rb") as f: img_b64 = base64.b64encode(f.read()).decode()
@@ -723,7 +718,9 @@ tab0, tab1, tab2, tab3, tab4, tab8, tab5, tab6, tab7 = st.tabs([
     "📺 경기 영상", "🗣️ 소리함", "⚡ 라인업 생성(관리자)", "⚙️ 관리자"
 ])
 
-# --- 탭 0: 운영 안내 ---
+# ---------------------------------------------------------
+# [탭 0] 운영 안내
+# ---------------------------------------------------------
 with tab0:
     st.info("📢 **[안내] 여순광 배구 픽업게임 운영 안내** (필독)")
     st.markdown("""
@@ -744,7 +741,7 @@ with tab0:
         - **시간 선택**: 늦참/조기귀가 시 **참가 가능한 세트**를 꼭 체크해주세요.
         - **정원제 시행**: 선착순 **20명**까지만 경기에 참여 가능합니다.
         - **예비 등록**: 21번째 신청자부터는 **'예비 대기자'**로 등록되며, 결원 발생 시 순서대로 연락드립니다.
-    2. **경기 진행**: 12명 이상 모이면 경기를 진행합니다.
+    2. **경기 진행**: 12명 이상 모이면 자체 경기를 진행하며, 인원 부족 시 타 클럽과의 교류전으로 진행합니다.
     3. **성별**: **남성 경기**이며, 남성 18명 미만 시 여성은 **수비 선수로만** 참가 가능합니다.
     4. **팀 배정**: 실력 균형을 맞춘 **100% 공평한 자동 라인업 시스템**을 사용합니다.
     
@@ -753,7 +750,9 @@ with tab0:
     [👉 여순광 배구 픽업 오픈채팅방 입장하기](https://open.kakao.com/o/gf1s6t9h)
     """)
 
-# --- 탭 1: 참가 신청 ---
+# ---------------------------------------------------------
+# [탭 1] 참가 신청
+# ---------------------------------------------------------
 with tab1:
     if not current_game or current_game.get('제목') == 'CLOSED':
         st.info("💤 **현재 모집 중인 게임이 없습니다.**")
@@ -917,7 +916,9 @@ with tab1:
             st.info("👋 **아직 신청자가 없습니다.** 첫 번째 참가자가 되어보세요!")
             st.metric("현재 참가 인원", "0명")
 
-# --- 탭 2: 라인업 공개 ---
+# ---------------------------------------------------------
+# [탭 2] 라인업 공개
+# ---------------------------------------------------------
 with tab2:
     log_visit("라인업조회", st.session_state.get('my_name', '익명'))
     if not current_game or current_game.get('제목') == 'CLOSED':
@@ -995,15 +996,21 @@ with tab2:
                                     missing_text_a = ", ".join(missing_a) if missing_a else "없음"
                                     missing_text_b = ", ".join(missing_b) if missing_b else "없음"
 
-                                    info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
-                                    if count_a != count_b: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
-                                    else: info_msg += f" (공통 제외: {missing_text_a})" if missing_text_a == missing_text_b else f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
-                                    st.info(info_msg)
+                                    if count_b == 0:
+                                        info_msg = f"📢 **[{i*2-1}·{i*2}세트] 단일 팀(교류전) 라인업 ({count_a}명)** (제외: {missing_text_a})"
+                                        st.info(info_msg)
+                                        st.markdown("### 🏟️ Court View")
+                                        st.markdown(render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i), unsafe_allow_html=True)
+                                    else:
+                                        info_msg = f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b} 경기**"
+                                        if count_a != count_b: info_msg += f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                        else: info_msg += f" (공통 제외: {missing_text_a})" if missing_text_a == missing_text_b else f" (🔴A제외: {missing_text_a} | 🔵B제외: {missing_text_b})"
+                                        st.info(info_msg)
 
-                                    st.markdown("### 🏟️ Court View")
-                                    st.markdown(render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i), unsafe_allow_html=True)
-                                    st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
-                                    st.markdown(render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i), unsafe_allow_html=True)
+                                        st.markdown("### 🏟️ Court View")
+                                        st.markdown(render_tactical_board(team_a_df, "A팀", col_pos, round_score_db, i), unsafe_allow_html=True)
+                                        st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
+                                        st.markdown(render_tactical_board(team_b_df, "B팀", col_pos, round_score_db, i), unsafe_allow_html=True)
                                 
                                 bench = playing[playing[col_pos]=="대기"]
                                 if not bench.empty:
@@ -1018,7 +1025,9 @@ with tab2:
                         else:
                             st.warning("아직 배정 정보가 없습니다.")
 
-# --- 탭 3: My Page ---
+# ---------------------------------------------------------
+# [탭 3] My Page
+# ---------------------------------------------------------
 with tab3:
     with st.expander("📘 이용 가이드: 내 정보 확인", expanded=False):
         st.write("본인의 이름과 연락처를 입력하면 '나만의 선수 카드'와 '과거 기록'을 확인할 수 있습니다.")
@@ -1080,7 +1089,9 @@ with tab3:
                 st.dataframe(df_hist[valid_cols], hide_index=True, use_container_width=True)
             else: st.info("아직 기록된 경기가 없습니다.")
 
-# --- 탭 4: MVP ---
+# ---------------------------------------------------------
+# [탭 4] MVP 투표
+# ---------------------------------------------------------
 with tab4:
     with st.expander("📘 이용 가이드: MVP 투표", expanded=False):
         st.write("🔒 본인 인증 후, 경기 내용을 떠올리며 가장 인상 깊었던 선수에게 투표해주세요.")
@@ -1110,7 +1121,7 @@ with tab4:
                 with c2: vphone = st.text_input("연락처")
                 if st.form_submit_button("인증하기"):
                     clean_vphone = normalize_phone(vphone)
-                    found = any(str(p['이름']).strip() == voter and normalize_phone(p['연락처']) == clean_vphone for p in apps)
+                    found = any(str(p['이름']).replace("[BLACK] ", "").replace("[VEGA] ", "").replace("[BLACK]", "").replace("[VEGA]", "").strip() == voter and normalize_phone(p['연락처']) == clean_vphone for p in apps)
                     if found:
                         st.session_state.update({'mvp_voter_verified': True, 'mvp_voter_name': voter, 'mvp_voter_phone': clean_vphone})
                         st.rerun()
@@ -1143,25 +1154,25 @@ with tab4:
                             st.error("🔴 A팀")
                             for _, r in playing[(playing[col_team]=="A팀") & (playing[col_pos]!="대기")].iterrows():
                                 b_col1, b_col2 = st.columns([3, 1])
-                                with b_col1: st.write(f"**{r[col_pos]}**: {r['이름']}")
+                                with b_col1: st.write(f"**{r[col_pos]}**: {anonymize_name(r['이름'])}")
                                 with b_col2: 
-                                    if st.button("투표", key=f"v_a_{i}_{r['이름']}"): process_vote(r['이름'])
+                                    if st.button("투표", key=f"v_a_{i}_{r['이름']}"): process_vote(anonymize_name(r['이름']))
                         with c2:
                             st.info("🔵 B팀")
                             for _, r in playing[(playing[col_team]=="B팀") & (playing[col_pos]!="대기")].iterrows():
                                 b_col1, b_col2 = st.columns([3, 1])
-                                with b_col1: st.write(f"**{r[col_pos]}**: {r['이름']}")
+                                with b_col1: st.write(f"**{r[col_pos]}**: {anonymize_name(r['이름'])}")
                                 with b_col2: 
-                                    if st.button("투표", key=f"v_b_{i}_{r['이름']}"): process_vote(r['이름'])
+                                    if st.button("투표", key=f"v_b_{i}_{r['이름']}"): process_vote(anonymize_name(r['이름']))
             else:
                 st.markdown("### 👥 전체 참가자 명단")
                 for idx, row in df_vote.iterrows():
                     with st.container():
                         lc1, lc2, lc3 = st.columns([2, 2, 1])
-                        with lc1: st.write(f"**{row['이름']}**")
+                        with lc1: st.write(f"**{anonymize_name(row['이름'])}**")
                         with lc2: st.caption(f"포지션: {row.get('확정포지션') or row.get('1순위') or '-'}")
                         with lc3: 
-                            if st.button("투표", key=f"v_list_{idx}"): process_vote(row['이름'])
+                            if st.button("투표", key=f"v_list_{idx}"): process_vote(anonymize_name(row['이름']))
                         st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
 
             st.divider()
@@ -1183,7 +1194,9 @@ with tab4:
                     if 'MVP후보' in hof.columns: hof = hof.rename(columns={'MVP후보':'MVP', '일시':'날짜'})
                     st.dataframe(hof[['날짜','MVP','득표수']], hide_index=True, use_container_width=True)
 
-# --- 탭 8: 경기 영상 ---
+# ---------------------------------------------------------
+# [탭 8] 경기 영상
+# ---------------------------------------------------------
 with tab8:
     st.header("📺 경기 영상 & 하이라이트")
     YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@pickup-game-y7r" 
@@ -1206,7 +1219,9 @@ with tab8:
     else:
         st.info("아직 등록된 하이라이트 영상이 없습니다.")
 
-# --- 탭 5: 소리함 ---
+# ---------------------------------------------------------
+# [탭 5] 소리함
+# ---------------------------------------------------------
 with tab5:
     st.header("🗣️ 소리함 (Q&A)")
     with st.expander("📝 건의사항 남기기 (클릭)", expanded=False):
@@ -1245,7 +1260,14 @@ with tab5:
     else:
         st.info("아직 등록된 건의사항이 없습니다.")
 
-# --- 탭 6: 라인업 생성 (관리자) ---
+
+# ==========================================
+# [STEP 5] 관리자 탭 (라인업 생성 & 설정)
+# ==========================================
+
+# ---------------------------------------------------------
+# [탭 6] 라인업 생성
+# ---------------------------------------------------------
 with tab6:
     st.header("⚡ 공평 라인업 생성")
     if not st.session_state.get('admin_logged_in', False):
@@ -1382,23 +1404,34 @@ with tab6:
                         miss_txt_a = ", ".join(miss_a) if miss_a else "없음"
                         miss_txt_b = ", ".join(miss_b) if miss_b else "없음"
 
-                        st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}** (🔴A제외: {miss_txt_a} | 🔵B제외: {miss_txt_b})")
-                        
-                        b_col1, b_col2 = st.columns([1, 4])
-                        with b_col1:
-                            diff = sum_a - sum_b
-                            st.metric("🔴 A팀 전력", f"{sum_a}", delta=f"격차: {diff}", delta_color="normal" if abs(diff) <= 2 else "inverse")
-                        with b_col2:
-                            max_possible = max(count_a, count_b) * 5 if max(count_a, count_b) > 0 else 1
-                            st.caption(f"전력 밸런스: A팀({sum_a}) vs B팀({sum_b})")
-                            st.progress(min(sum_a / max_possible, 1.0))
-                            st.progress(min(sum_b / max_possible, 1.0))
+                        if count_b == 0:
+                            st.info(f"📢 **[{i*2-1}·{i*2}세트] 단일 팀(교류전) 라인업 ({count_a}명)** (제외: {miss_txt_a})")
+                            b_col1, b_col2 = st.columns([1, 4])
+                            with b_col1:
+                                st.metric("🔴 A팀 전력", f"{sum_a}")
+                            with b_col2:
+                                st.caption(f"전력 게이지: 단일 팀({sum_a})")
+                                st.progress(min(sum_a / (count_a * 5 if count_a > 0 else 1), 1.0))
+                            st.markdown("### 🏟️ Court View")
+                            df_a = pd.DataFrame(valid_team_a)
+                            st.markdown(render_tactical_board(df_a, "A팀", "assigned_pos"), unsafe_allow_html=True)
+                        else:
+                            st.info(f"📢 **[{i*2-1}·{i*2}세트] {count_a} vs {count_b}** (🔴A제외: {miss_txt_a} | 🔵B제외: {miss_txt_b})")
+                            b_col1, b_col2 = st.columns([1, 4])
+                            with b_col1:
+                                diff = sum_a - sum_b
+                                st.metric("🔴 A팀 전력", f"{sum_a}", delta=f"격차: {diff}", delta_color="normal" if abs(diff) <= 2 else "inverse")
+                            with b_col2:
+                                max_possible = max(count_a, count_b) * 5 if max(count_a, count_b) > 0 else 1
+                                st.caption(f"전력 밸런스: A팀({sum_a}) vs B팀({sum_b})")
+                                st.progress(min(sum_a / max_possible, 1.0))
+                                st.progress(min(sum_b / max_possible, 1.0))
 
-                        st.markdown("### 🏟️ Court View")
-                        df_a, df_b = pd.DataFrame(valid_team_a), pd.DataFrame(valid_team_b)
-                        st.markdown(render_tactical_board(df_a, "A팀", "assigned_pos"), unsafe_allow_html=True)
-                        st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
-                        st.markdown(render_tactical_board(df_b, "B팀", "assigned_pos"), unsafe_allow_html=True)
+                            st.markdown("### 🏟️ Court View")
+                            df_a, df_b = pd.DataFrame(valid_team_a), pd.DataFrame(valid_team_b)
+                            st.markdown(render_tactical_board(df_a, "A팀", "assigned_pos"), unsafe_allow_html=True)
+                            st.markdown("<div style='text-align: center; font-weight: bold; margin: 5px 0; color: #999; font-size: 0.8em;'>▼ NEXT COURT ▼</div>", unsafe_allow_html=True)
+                            st.markdown(render_tactical_board(df_b, "B팀", "assigned_pos"), unsafe_allow_html=True)
                         
                         bench = [p for p in valid_team_a+valid_team_b if p['assigned_pos']=="대기"]
                         if bench:
@@ -1423,7 +1456,9 @@ with tab6:
                 if 'fair_results' in st.session_state: del st.session_state['fair_results']
                 st.success("저장되었습니다! 화면이 갱신됩니다."); time.sleep(1.0); st.rerun()
 
-# --- 탭 7: 관리자 ---
+# ---------------------------------------------------------
+# [탭 7] 관리자 (설정)
+# ---------------------------------------------------------
 with tab7:
     st.header("⚙️ 관리자 페이지")
     admin_auth = st.empty()
@@ -1507,7 +1542,7 @@ with tab7:
             
             df_manage = df_manage.reset_index(drop=True)
             
-            # [공평 시스템] 특정 팀 우대 조건 제거, 오직 정원순으로만 자름
+            # [공평] 정원 기준으로만 자름 (특정 팀 우대 X)
             mask_capa = (df_manage.index < MAX_CAPACITY)
             df_confirmed = df_manage[mask_capa]
             df_waiting = df_manage[~mask_capa]
